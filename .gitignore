@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+data/*
+!data/.gitkeep
+models/*
+!models/.gitkeep
+build/
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/main/model_weights.h
+.pytest_cache/
+*.egg-info/
