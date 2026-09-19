@@ -65,6 +65,7 @@ Não há ponteiros compartilhados para features ou eventos: as filas copiam os v
 
 A serial emite uma linha JSON dentro da mensagem de log, aproximadamente a cada segundo:
 
+- `rms_mean`: média dos RMS dos dez intervalos temporais, em amplitude normalizada. Ajuda a verificar se o microfone recebe sinal; não é dB SPL calibrado.
 - `capture_us`: duração da leitura bloqueante do bloco I2S, incluindo espera por áudio. Não é tempo de CPU puro.
 - `features_us`: cópia da janela ordenada e extração do vetor.
 - `inference_us`: produto escalar e sigmoide do classificador.

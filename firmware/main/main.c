@@ -201,10 +201,12 @@ static void detect_task(void *arg) {
         }
         if (end-last_log >= 1000000) {
             last_log=end;
+            float rms_mean = 0;
+            for (int bin = 0; bin < 10; bin++) rms_mean += item.features[bin * 15] / 10;
             uint32_t da,df,dn;
             portENTER_CRITICAL(&stats_mux); da=dropped_audio; df=dropped_features; dn=dropped_network; portEXIT_CRITICAL(&stats_mux);
-            ESP_LOGI(TAG, "{\"score\":%.4f,\"capture_us\":%"PRId64",\"features_us\":%"PRId64",\"inference_us\":%"PRId64",\"decision_us\":%"PRId64",\"drop_audio\":%"PRIu32",\"drop_features\":%"PRIu32",\"drop_network\":%"PRIu32"}",
-                     score,item.capture_us,item.features_us,end-start,end-item.completed_us,da,df,dn);
+            ESP_LOGI(TAG, "{\"score\":%.4f,\"rms_mean\":%.6f,\"capture_us\":%"PRId64",\"features_us\":%"PRId64",\"inference_us\":%"PRId64",\"decision_us\":%"PRId64",\"drop_audio\":%"PRIu32",\"drop_features\":%"PRIu32",\"drop_network\":%"PRIu32"}",
+                     score,rms_mean,item.capture_us,item.features_us,end-start,end-item.completed_us,da,df,dn);
         }
     }
 }
@@ -260,6 +262,9 @@ void app_main(void) {
         configASSERT(GPIO_IS_VALID_OUTPUT_GPIO(pins[i]));
         for (unsigned j = 0; j < i; j++) configASSERT(pins[i] != pins[j]);
     }
+    ESP_LOGI(TAG, "Pins: SD=%d SCK=%d WS=%d red=%d green=%d mute=%d",
+             CONFIG_FERRIS_DIN, CONFIG_FERRIS_BCLK, CONFIG_FERRIS_WS,
+             CONFIG_FERRIS_LED_RED, CONFIG_FERRIS_LED_GREEN, CONFIG_FERRIS_MUTE_BUTTON);
     ferris_listen_init(&listen_state);
     gpio_config_t led={.pin_bit_mask=(1ULL<<CONFIG_FERRIS_LED_RED)|(1ULL<<CONFIG_FERRIS_LED_GREEN),.mode=GPIO_MODE_OUTPUT};
     ESP_ERROR_CHECK(gpio_config(&led));

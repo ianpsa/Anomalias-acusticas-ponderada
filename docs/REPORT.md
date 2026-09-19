@@ -34,9 +34,11 @@ A execução de teste com tons sintéticos obteve erro absoluto máximo aproxima
 
 ## Resultados a preencher com hardware e dados reais
 
+O primeiro teste físico de captura e mute está registrado em [HARDWARE_CHECK.md](HARDWARE_CHECK.md). A placa iniciou com os pinos confirmados e produziu sinal/efeitos do botão. As três amostras de latência coletadas não substituem a campanha de medição abaixo, e ainda não havia modelo treinado ou conexão com a IA.
+
 | Medida | Resultado |
 |---|---|
-| Placa, frequência de CPU, versão de firmware e microfone | Pendente |
+| Placa, frequência de CPU, versão de firmware e microfone | ESP-32U / ESP32-D0WD-V3 rev3.1, CPU 160 MHz, ESP-IDF 5.4.2; entrada I2S nos pinos confirmados |
 | Exemplos positivos/negativos e sessões independentes | Pendente dos áudios |
 | Recall, precisão e matriz de confusão em sessões reservadas | Pendente |
 | Falsos acionamentos por hora de áudio contínuo negativo | Pendente |
