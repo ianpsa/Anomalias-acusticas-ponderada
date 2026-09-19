@@ -252,7 +252,7 @@ $('test-connection').onclick = async () => {
   try {
     await saveSettings(); const {models} = await api('/api/models'); $('model-list').replaceChildren();
     models.forEach(id => { const o = document.createElement('option'); o.value = id; $('model-list').append(o); });
-    if (!$('model').value && models.length) $('model').value = models[0];
+    if (!$('model').value && models.length) $('model').value = models.find(id => id === 'ferris-gemma') || models.find(id => /gemma/i.test(id)) || models[0];
     $('connection-result').textContent = models.length ? `${models.length} modelo(s) disponível(is). Escolha e salve.` : 'Servidor conectado, mas sem modelos disponíveis.';
     $('connection-dot').classList.toggle('on', models.length > 0);
   } catch (e) { $('connection-result').textContent = e.message; $('connection-dot').classList.remove('on'); }

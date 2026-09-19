@@ -212,6 +212,10 @@ class Assistant:
                                  'required': ['query'], 'additionalProperties': False}}}]
         for turn in range(3):
             payload = dict(model=s['model'], messages=messages, temperature=0.6, max_tokens=350, stream=False)
+            # Gemma 4 defaults to thinking, which can exhaust the voice response
+            # budget before producing spoken text. ferris-gemma is our local alias.
+            if s['model'] == 'ferris-gemma' or re.search(r'gemma[\s_/-]*4', s['model'], re.I):
+                payload['reasoning_effort'] = 'none'
             if s['search_key'] and turn < 2 and not explicit_search:
                 payload['tools'] = tools
             result = fetch_json(checked_url(s['base_url']) + '/chat/completions', payload, s['api_key'])

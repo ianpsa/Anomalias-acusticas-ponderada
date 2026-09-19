@@ -1,4 +1,4 @@
-// End-to-end UI smoke test. Only the remote LM endpoint is a deterministic fixture.
+// End-to-end UI smoke test. The LM Studio endpoint is a deterministic fixture.
 import {spawn} from 'node:child_process';
 import {mkdtemp, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -29,10 +29,10 @@ from http.server import BaseHTTPRequestHandler,HTTPServer
 import json
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args): pass
- def do_GET(self): self.send({'data':[{'id':'test-remote-model'}]})
+ def do_GET(self): self.send({'data':[{'id':'text-embedding-model'},{'id':'ferris-gemma'}]})
  def do_POST(self):
   data=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-  assert data['model']=='test-remote-model'
+  assert data['model']=='ferris-gemma'
   self.send({'choices':[{'message':{'content':'Olá Ian, esta é uma resposta de teste do servidor remoto.'}}]})
  def send(self,value):
   raw=json.dumps(value).encode(); self.send_response(200); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(raw))); self.end_headers(); self.wfile.write(raw)
@@ -76,7 +76,7 @@ s.serve_forever()
   await evaluate('document.getElementById("spoken").checked=false; document.getElementById("open-settings").click()');
   await until('document.getElementById("settings").open');
   await evaluate(`document.getElementById('base-url').value=${JSON.stringify(fixture)}; document.getElementById('test-connection').click()`);
-  await until('document.getElementById("model").value === "test-remote-model"');
+  await until('document.getElementById("model").value === "ferris-gemma"');
   await evaluate('document.getElementById("settings-form").requestSubmit()');
   await until('!document.getElementById("settings").open');
   await evaluate('document.getElementById("message").value="Olá, Ferris"; document.getElementById("chat-form").requestSubmit()');
@@ -101,6 +101,6 @@ s.serve_forever()
   const mobile=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   await writeFile(path.join(temporary,'mobile.png'),Buffer.from(mobile.data,'base64'));
   assert.deepEqual(errors,[]);
-  console.log('PASS: remote connection, chat, code refusal, Google fallback, microphone recording with fake audio, untrained-model notice, tabs, desktop/mobile overflow, no JS errors.');
+  console.log('PASS: LM Studio connection, Gemma selection, chat, code refusal, Google fallback, microphone recording with fake audio, untrained-model notice, tabs, desktop/mobile overflow, no JS errors.');
   console.log('Screenshots: '+temporary);
 } finally { for (const child of children) child.kill('SIGTERM'); }

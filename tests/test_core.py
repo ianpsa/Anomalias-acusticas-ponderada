@@ -42,9 +42,19 @@ class CoreTests(unittest.TestCase):
         url,payload,key=fetch.call_args.args
         self.assertTrue(url.endswith('/v1/chat/completions'))
         self.assertEqual(key,'secret'); self.assertEqual(payload['model'],'remote-model')
+        self.assertNotIn('reasoning_effort',payload)
         self.assertIn('Data e hora locais',payload['messages'][0]['content'])
         self.assistant.chat('Nova conversa','tab2')
         self.assertEqual(len(fetch.call_args.args[1]['messages']),2)
+
+    @patch('ferris.core.fetch_json')
+    def test_gemma4_voice_reply_disables_thinking(self, fetch):
+        fetch.return_value={'choices':[{'message':{'content':'Olá!'}}]}
+        for model in ['ferris-gemma','google/gemma-4-e2b','gemma-4-E4B-it']:
+            with self.subTest(model=model):
+                self.settings.update({'model':model})
+                self.assertEqual(self.assistant.chat('Olá','gemma')['text'],'Olá!')
+                self.assertEqual(fetch.call_args.args[1]['reasoning_effort'],'none')
 
     @patch('ferris.core.fetch_json')
     def test_code_rejected_without_calling_model(self,fetch):

@@ -34,9 +34,9 @@
 </main>
 <footer><span>Uma pequena companhia. Uma conversa de cada vez.</span><span id="latency"></span></footer>
 <div id="notice" role="alert" hidden></div>
-<dialog id="settings"><form id="settings-form"><div class="dialog-heading"><h2>Conectar o Ferris</h2><button type="button" id="close-settings" class="quiet" aria-label="Fechar">✕</button></div><p>O modelo pode estar neste PC ou em outro computador da sua rede.</p>
+<dialog id="settings"><form id="settings-form"><div class="dialog-heading"><h2>Conectar o Ferris</h2><button type="button" id="close-settings" class="quiet" aria-label="Fechar">✕</button></div><p>Use o Gemma no LM Studio deste PC. Ligue o servidor local, busque os modelos e salve sua escolha. Também é possível conectar um servidor na sua rede.</p>
  <label class="field">Seu nome<input name="name" id="name" maxlength="60" value="Ian" required></label>
- <label class="field">Endereço do LM Studio<input name="base_url" id="base-url" type="url" placeholder="http://192.168.1.50:1234/v1" required></label>
+ <label class="field">Endereço do LM Studio<input name="base_url" id="base-url" type="url" placeholder="http://127.0.0.1:1234/v1" required></label>
  <label class="field">Chave do LM Studio (se exigida)<input id="api-key" type="password" autocomplete="off" placeholder="Deixe vazio para manter a chave salva"></label>
  <div class="field"><label for="model">Modelo</label><div class="model-input"><input name="model" id="model" list="model-list" placeholder="Identificador do modelo"><datalist id="model-list"></datalist><button id="test-connection" type="button" class="quiet">Buscar modelos</button></div></div>
  <label class="field">Fuso horário<input name="timezone" id="timezone" value="America/Sao_Paulo" required></label>

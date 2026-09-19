@@ -1,5 +1,7 @@
 # Artefatos do detector
 
+O **Gemma no LM Studio** cuida da conversa e fica no diretório de modelos do LM Studio, fora deste repositório. Ele não precisa ser treinado com sua voz. Os arquivos abaixo são exclusivamente do detector ONNX que aprende a reconhecer a palavra “Ferris”; a coleta e o treinamento funcionam mesmo com o LM Studio desligado.
+
 `tools/train_wake.py` gera:
 
 - `wake.onnx`: entrada `features` float32 `[batch, 150]`; saída `probability` float32 `[batch, 1]`.
