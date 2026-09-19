@@ -17,6 +17,8 @@ from urllib.parse import parse_qs, urlsplit
 from .audio import Transcriber, read_recording
 from .core import Assistant, Settings, UserError, greeting
 from .detector import Detector
+from .training import Training
+from .device import Device, discover_port
 
 STATIC = Path(__file__).parent / 'static'
 MAX_BODY = 1_000_000
@@ -25,15 +27,24 @@ MAX_BODY = 1_000_000
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, data, token='', device_token='', whisper=''):
+    def __init__(self, address, data, token='', device_token='', whisper='', model_dir=None, header=None, serial_port=''):
         self.data = Path(data)
         self.settings = Settings(self.data)
         self.assistant = Assistant(self.settings)
-        self.transcriber = Transcriber(whisper)
-        self.detector = Detector()
+        local_whisper = self.data/'whisper'/'small'
+        self.transcriber = Transcriber(whisper or (str(local_whisper) if (local_whisper/'model.bin').is_file() else ''))
+        self.detector = Detector(model_dir)
+        self.device = Device(serial_port, self.assistant)
+        export_header = header or (Path(model_dir)/'model_weights.h' if model_dir else None)
+        self.training = Training(self.data, self.detector, export_header, self.device)
         self.token = token
         self.device_token = device_token
         super().__init__(address, Handler)
+        self.device.start()
+
+    def server_close(self):
+        self.device.stop()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -116,7 +127,10 @@ class Handler(BaseHTTPRequestHandler):
                 counts = {label: len(list((self.server.data/'recordings'/label).glob('*/*.wav'))) for label in ('ferris', 'other', 'noise')}
                 self.reply(dict(settings=self.server.settings.public(), greeting=greeting(self.server.settings.get()),
                                 recordings=counts, local_voice=bool(self.server.transcriber.path),
-                                wake_model=self.server.detector.ready))
+                                recording_sessions=len({p.parent.name for p in (self.server.data/'recordings').glob('*/*/*.wav')}),
+                                training=self.server.training.status(), device=self.server.device.status(), wake_model=self.server.detector.ready))
+            elif path == '/api/training':
+                self.reply(self.server.training.status())
             elif path == '/api/models':
                 self.reply({'models': self.server.assistant.models()})
             elif path == '/api/events':
@@ -135,7 +149,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             data = self.body()
-            if path == '/api/settings':
+            if path == '/api/train':
+                self.reply(self.server.training.start(data.get('split_mode'), data.get('flash', False)), 202)
+            elif path == '/api/settings':
                 self.reply(self.server.settings.update(data))
             elif path == '/api/chat':
                 text = data.get('text', '')
@@ -156,7 +172,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise UserError('Confiança inválida.')
                 if not isinstance(metrics, dict) or len(metrics) > 12 or any(type(v) not in (float, int) or not math.isfinite(v) or v < 0 for v in metrics.values()):
                     raise UserError('Métricas inválidas.')
-                self.reply(self.server.assistant.wake(device, confidence, metrics))
+                event_id = data.get('event_id') if path == '/api/device/wake' else None
+                if event_id is not None and (not isinstance(event_id,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',event_id)):
+                    raise UserError('Identificador de evento inválido.')
+                self.reply(self.server.assistant.wake(device, confidence, metrics, event_id))
             elif path in ('/api/recordings', '/api/transcribe', '/api/detect'):
                 try:
                     raw = base64.b64decode(data.get('audio', ''), validate=True)
@@ -175,8 +194,10 @@ class Handler(BaseHTTPRequestHandler):
                 folder = self.server.data / 'recordings' / label / group
                 folder.mkdir(parents=True, exist_ok=True)
                 name = f'{time.time_ns()}-{secrets.token_hex(4)}.wav'
-                with open(folder / name, 'xb') as f:
+                partial = folder / (name+'.part')
+                with open(partial, 'xb') as f:
                     f.write(raw)
+                partial.replace(folder / name)
                 self.reply({'saved': True, 'label': label, 'file': name}, 201)
             else:
                 self.reply({'error': 'Rota não encontrada.'}, 404)
@@ -203,12 +224,15 @@ def main():
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--data', type=Path, default=Path('data'))
+    parser.add_argument('--models', type=Path, default=None, help='Diretório dos modelos ONNX')
+    parser.add_argument('--serial-port', default=os.getenv('FERRIS_SERIAL_PORT', discover_port()),
+                        help='Porta USB do ESP32; vazio desabilita USB e mantém Wi-Fi')
     args = parser.parse_args()
     token = os.getenv('FERRIS_TOKEN', '')
     if args.host not in ('127.0.0.1', 'localhost') and len(token) < 24:
         parser.error('Para servir na rede, configure FERRIS_TOKEN com pelo menos 24 caracteres.')
     with Server((args.host, args.port), args.data, token, os.getenv('FERRIS_DEVICE_TOKEN', ''),
-                os.getenv('FERRIS_WHISPER_MODEL', '')) as server:
+                os.getenv('FERRIS_WHISPER_MODEL', ''), model_dir=args.models, serial_port=args.serial_port) as server:
         print(f'Ferris em http://{args.host}:{server.server_port} — Ctrl+C para encerrar', flush=True)
         try:
             server.serve_forever()

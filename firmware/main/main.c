@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "ferris_dsp.h"
@@ -222,15 +223,19 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 static void network_task(void *arg) {
     (void)arg;
     wake_item_t item;
+    const uint32_t boot_id = esp_random();
+    uint32_t event_sequence = 0;
     char authorization[256], body[512];
     int length=snprintf(authorization,sizeof(authorization),"Bearer %s",CONFIG_FERRIS_DEVICE_TOKEN);
     bool configured = strlen(CONFIG_FERRIS_DEVICE_TOKEN)>0 && length>0 && length<(int)sizeof(authorization);
     while (1) {
         if (xQueueReceive(wake_queue,&item,portMAX_DELAY) != pdTRUE) continue;
         if (!accepts_generation(item.generation)) continue;
+        snprintf(body,sizeof(body),"{\"device\":\"esp32-ferris\",\"event_id\":\"%08"PRIx32"-%"PRIu32"\",\"confidence\":%.6f,\"metrics\":{\"capture_us\":%"PRId64",\"features_us\":%"PRId64",\"inference_us\":%"PRId64",\"decision_us\":%"PRId64"}}",
+                 boot_id,++event_sequence,item.confidence,item.capture_us,item.features_us,item.inference_us,item.decision_us);
+        // USB and Wi-Fi carry the same ID so the bridge can deduplicate them.
+        printf("FERRIS_WAKE %s\n", body);
         if (!configured || !(xEventGroupGetBits(network)&WIFI_READY)) { increment(&dropped_network); continue; }
-        snprintf(body,sizeof(body),"{\"device\":\"esp32-ferris\",\"confidence\":%.6f,\"metrics\":{\"capture_us\":%"PRId64",\"features_us\":%"PRId64",\"inference_us\":%"PRId64",\"decision_us\":%"PRId64"}}",
-                 item.confidence,item.capture_us,item.features_us,item.inference_us,item.decision_us);
         esp_http_client_config_t config={.url=CONFIG_FERRIS_BRIDGE_URL,.timeout_ms=2000,.disable_auto_redirect=true};
         esp_http_client_handle_t client=esp_http_client_init(&config);
         if (!client) { increment(&dropped_network); continue; }

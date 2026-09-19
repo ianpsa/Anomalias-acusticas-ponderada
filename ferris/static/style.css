@@ -397,6 +397,14 @@ input[type=checkbox] {
   padding-left:12px;
   font-size:13px;
 }
+.training-panel {
+  border-top:1px solid var(--line);
+  margin-top:24px;
+  padding-top:12px;
+}
+.training-panel h3 {
+  margin-bottom:12px;
+}
 footer {
   max-width:1440px;
   margin:auto;

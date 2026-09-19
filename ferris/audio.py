@@ -44,7 +44,8 @@ class Transcriber:
         try:
             if self.model is None:
                 from faster_whisper import WhisperModel
-                self.model = WhisperModel(self.path, device='cpu', compute_type='int8', local_files_only=True)
+                self.model = WhisperModel(self.path, device='cpu', compute_type='int8', cpu_threads=4,
+                                          num_workers=1, local_files_only=True)
             segments, _ = self.model.transcribe(io.BytesIO(raw), language='pt', beam_size=3,
                                                 vad_filter=True, condition_on_previous_text=False)
             return ' '.join(s.text.strip() for s in segments).strip()

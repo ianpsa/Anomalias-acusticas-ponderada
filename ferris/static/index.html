@@ -9,8 +9,8 @@
   <div class="creature" id="creature" aria-hidden="true"><svg viewBox="0 0 360 260" fill="none"><g stroke="#283e47" stroke-width="9" stroke-linecap="round"><path d="M95 174 53 196 36 226M106 195 79 220 75 242M265 174 307 196 324 226M254 195 281 220 285 242"/><path d="M97 147 53 130 37 94M263 147 307 130 323 94"/></g><path d="M30 109C9 88 7 51 26 35L39 65 60 40C82 70 60 105 42 113Z" fill="#ef8b65"/><path d="M330 109C351 88 353 51 334 35L321 65 300 40C278 70 300 105 318 113Z" fill="#ef8b65"/><path d="M78 162C78 99 119 86 180 86S282 99 282 162C282 209 238 230 180 230S78 209 78 162Z" fill="#ef8b65"/><path d="M128 103 122 73M232 103 238 73" stroke="#ef8b65" stroke-width="18" stroke-linecap="round"/><g class="eyes" fill="#283e47"><ellipse cx="121" cy="65" rx="12" ry="17"/><ellipse cx="239" cy="65" rx="12" ry="17"/></g><path d="M158 168Q180 190 202 168" stroke="#283e47" stroke-width="7" stroke-linecap="round"/><ellipse cx="120" cy="163" rx="15" ry="8" fill="#f9b397"/><ellipse cx="240" cy="163" rx="15" ry="8" fill="#f9b397"/></svg></div>
   <div class="listen-state"><span class="dot" id="mic-dot"></span><span id="state" role="status">Pronto quando você estiver.</span></div>
   <button class="primary" id="listen">Ativar microfone</button>
-  <div class="voice-options"><label for="voice-mode">Reconhecimento</label><select id="voice-mode"><option value="browser">Voz do navegador</option><option value="local">Local: ONNX + Whisper</option></select></div>
-  <p class="fine" id="voice-note">No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.</p>
+  <div class="voice-options"><label for="voice-mode">Reconhecimento</label><select id="voice-mode"><option value="esp">ESP32 + Whisper neste PC</option><option value="local">Testar detector e Whisper no PC</option><option value="browser">Voz do navegador</option></select></div>
+  <p class="fine" id="voice-note">O ESP32 detecta “Ferris”. O microfone deste PC capta a pergunta; Whisper transcreve e Gemma responde aqui.</p>
   <div class="small-controls"><button class="quiet" id="wake">Chamar Ferris</button><button class="quiet" id="stop">Parar</button><label><input type="checkbox" id="spoken" checked> Ler respostas</label></div>
  </section>
  <section class="workspace">
@@ -31,6 +31,18 @@
    <button id="record" class="primary">Gravar exemplo de 2 segundos</button><p id="record-state" role="status">Diga a palavra no centro da gravação.</p>
    <label class="upload">Ou importar arquivos WAV<input id="upload" type="file" accept=".wav,audio/wav" multiple></label><p class="fine">WAV mono, 16 kHz, 16 bits; até 5 segundos. Os áudios ficam neste PC e não vão para o GitHub.</p>
    <p id="model-state" class="model-state">Modelo pessoal ainda não treinado.</p>
+   <div class="training-panel">
+    <h3>Treinar o detector</h3>
+    <label class="field">Avaliação<select id="training-mode"><option value="sessions">Sessões diferentes — avaliação final</option><option value="recordings">Experimental — arquivos da mesma sessão</option></select></label>
+    <p class="fine" id="training-note">O treino experimental permite testar agora, mas não mede o desempenho em outro ambiente ou dia.</p>
+    <label><input id="flash-esp32" type="checkbox"> Gravar também no ESP32 conectado por USB</label>
+    <p id="device-state" class="fine"></p>
+    <button id="train-model" class="primary">Treinar e usar modelo</button>
+    <p id="training-state" role="status">O modelo anterior continua disponível durante o treino.</p>
+    <p id="training-metrics" class="fine"></p>
+    <p class="fine">O treino roda neste PC e exporta os pesos do detector para o ESP32. A placa precisa receber o firmware atualizado.</p>
+    <p id="whisper-state" class="fine"></p>
+   </div>
   </div>
  </section>
 </main>

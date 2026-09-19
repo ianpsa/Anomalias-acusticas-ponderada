@@ -23,7 +23,7 @@ async function address(child) {
 }
 let chrome;
 try {
-  const app = await address(start(['-m','ferris.server','--port','0','--data',path.join(temporary,'data')]));
+  const app = await address(start(['-m','ferris.server','--port','0','--data',path.join(temporary,'data'),'--models',path.join(temporary,'models'),'--serial-port','']));
   const fixture = await address(start(['-u','-c',`
 from http.server import BaseHTTPRequestHandler,HTTPServer
 import json
@@ -67,8 +67,8 @@ s.serve_forever()
     const result=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});
     if (result.exceptionDetails) throw Error(JSON.stringify(result.exceptionDetails)); return result.result.value;
   };
-  async function until(expression) {
-    for (let i=0;i<50;i++) { if (await evaluate(expression)) return; await sleep(100); }
+  async function until(expression, attempts=50) {
+    for (let i=0;i<attempts;i++) { if (await evaluate(expression)) return; await sleep(100); }
     throw Error('Condition not reached: '+expression);
   }
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
@@ -97,6 +97,32 @@ s.serve_forever()
   assert.equal(await evaluate('document.getElementById("count-noise").textContent'),'1');
   assert.match(await evaluate('document.getElementById("record-level-text").textContent'),/Sem sinal/);
   await evaluate('Capture.prototype.start = window.originalCaptureStart');
+  await evaluate('document.getElementById("train-model").click()');
+  await until('document.getElementById("training-state").textContent.includes("12 exemplos")');
+  // Synthetic tones exercise the real training subprocess without private audio.
+  const seed = start(['-c',`
+import sys,wave
+from pathlib import Path
+import numpy as np
+root=Path(sys.argv[1]); rng=np.random.default_rng(8)
+for label,hz in [('ferris',900),('other',2400),('noise',3000)]:
+ folder=root/'recordings'/label/'browser-test'; folder.mkdir(parents=True,exist_ok=True)
+ for i in range(12):
+  t=np.arange(32000)/16000
+  pcm=(8000*np.sin(2*np.pi*(hz+i)*t)+rng.normal(0,100,32000)).astype('<i2').tobytes()
+  with wave.open(str(folder/f'{i}.wav'),'wb') as w:
+   w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(pcm)
+`,path.join(temporary,'data')]);
+  await new Promise((resolve,reject) => seed.on('exit',code=>code===0?resolve():reject(Error('Training fixture failed'))));
+  await evaluate('refresh()');
+  await evaluate('document.getElementById("training-mode").value="recordings"; document.getElementById("train-model").click()');
+  await until('document.getElementById("training-state").textContent.includes("Modelo treinado e ativo")',450);
+  assert.match(await evaluate('document.getElementById("training-metrics").textContent'),/Experimental.*Teste reservado/);
+  assert.equal(await evaluate('document.getElementById("train-model").disabled'),false);
+  const trainingShot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
+  await writeFile(path.join(temporary,'training-desktop.png'),Buffer.from(trainingShot.data,'base64'));
+  await call('Page.reload'); await until('document.readyState === "complete"');
+  await until('document.getElementById("model-state").textContent.includes("Detector ativo")');
   await evaluate('document.getElementById("voice-mode").value="local"; document.getElementById("listen").click()');
   await until('document.getElementById("notice").textContent.includes("detector ONNX treinado")');
   await evaluate('document.getElementById("tab-chat").click()');
@@ -107,7 +133,11 @@ s.serve_forever()
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
   const mobile=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   await writeFile(path.join(temporary,'mobile.png'),Buffer.from(mobile.data,'base64'));
+  await evaluate('document.getElementById("tab-voice").click()');
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
+  const trainingMobile=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
+  await writeFile(path.join(temporary,'training-mobile.png'),Buffer.from(trainingMobile.data,'base64'));
   assert.deepEqual(errors,[]);
-  console.log('PASS: LM Studio connection, Gemma selection, chat, code refusal, Google fallback, microphone recording with fake audio, muted recording rejected, untrained-model notice, tabs, desktop/mobile overflow, no JS errors.');
+  console.log('PASS: LM Studio, Gemma, chat, code refusal, Google fallback, recording, mute rejection, training button, metrics, activation after reload, local voice prerequisites, tabs, desktop/mobile overflow, no JS errors.');
   console.log('Screenshots: '+temporary);
 } finally { for (const child of children) child.kill('SIGTERM'); }

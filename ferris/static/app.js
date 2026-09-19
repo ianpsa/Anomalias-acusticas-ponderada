@@ -4,6 +4,7 @@ let session = crypto.randomUUID();
 let accessToken = '', enabled = false, busy = false, speaking = false, activeUntil = 0;
 let recognition, capture, recordingCapture, currentUtterance, generation = 0, eventId = 0, polled = false;
 let detectBusy = false, hits = 0, lastDetect = 0, commandSamples = [], silenceSince = 0, speechStarted = false;
+let trainingChoice = false, trainingPolling = false;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -20,7 +21,7 @@ function notice(text) {
   clearTimeout(notice.timer); notice.timer = setTimeout(() => $('notice').hidden = true, 7000);
 }
 function state(text) { $('state').textContent = text; }
-function idleState() { state(enabled ? (Date.now() < activeUntil ? 'Pode fazer sua pergunta.' : 'Ouvindo por “Ferris”…') : 'Microfone desligado.'); }
+function idleState() { state(enabled ? (Date.now() < activeUntil ? 'Pode fazer sua pergunta.' : ($('voice-mode').value === 'esp' ? 'Aguardando “Ferris” no ESP32…' : 'Ouvindo por “Ferris”…')) : 'Microfone desligado.'); }
 function addMessage(text, who = 'assistant', sources = [], error = false) {
   $('empty')?.remove();
   const box = document.createElement('div'); box.className = `message ${who}${error ? ' error' : ''}`;
@@ -180,6 +181,7 @@ async function processLocal(chunk) {
     return;
   }
   resetCommand(); idleState();
+  if ($('voice-mode').value === 'esp') return;
   processLocal.ring = (processLocal.ring || []).concat(Array.from(chunk)).slice(-16000);
   if (processLocal.ring.length < 16000 || detectBusy || Date.now() - lastDetect < 250) return;
   detectBusy = true; lastDetect = Date.now(); const turn = generation;
@@ -201,7 +203,8 @@ async function toggleListen() {
     } else {
       const info = await api('/api/status');
       if (turn !== generation) return;
-      if (!info.wake_model || !info.local_voice) throw new Error('O modo local precisa do detector ONNX treinado e de um modelo Whisper configurado. Você já pode gravar exemplos em Minha voz.');
+      if ($('voice-mode').value === 'local' && (!info.wake_model || !info.local_voice)) throw new Error('O modo local precisa do detector ONNX treinado e de um modelo Whisper configurado. Você já pode gravar exemplos em Minha voz.');
+      if (!info.local_voice) throw new Error('Configure o Whisper neste PC para transcrever suas perguntas.');
       const opened = new Capture(); capture = opened; await opened.start(processLocal);
       if (turn !== generation || capture !== opened) { opened.stop(); return; }
       enabled = true;
@@ -224,8 +227,45 @@ async function refresh() {
   const info = await api('/api/status');
   for (const key of ['ferris', 'other', 'noise']) $('count-' + key).textContent = info.recordings[key];
   $('model-state').textContent = info.wake_model ? 'Detector ONNX disponível. Valide com áudios de uma nova sessão.' : 'Modelo pessoal ainda não treinado. Comece reunindo seus exemplos.';
+  if (!trainingChoice) $('training-mode').value = info.recording_sessions >= 4 ? 'sessions' : 'recordings';
+  renderTraining(info.training);
+  $('whisper-state').textContent = info.local_voice ? 'Whisper local configurado: suas perguntas são transcritas neste PC.' : 'Whisper ainda não configurado neste PC.';
+  $('device-state').textContent = info.device?.connected ? 'ESP32 conectado por USB. Eventos por Wi-Fi também são aceitos quando configurados.' : 'USB não conectado. O modo Wi-Fi continua disponível quando configurado.';
+  $('flash-esp32').disabled = !info.device?.available || info.training?.state === 'running';
   return info;
 }
+function renderTraining(job) {
+  if (!job) return;
+  const running = job.state === 'running';
+  $('train-model').disabled = running;
+  $('training-mode').disabled = running;
+  if (running) $('flash-esp32').disabled = true;
+  $('train-model').textContent = running ? 'Treinando…' : 'Treinar e usar modelo';
+  $('training-state').textContent = job.message;
+  const model = job.model, metrics = model?.test;
+  $('training-metrics').textContent = metrics ? `${model.split_mode === 'recordings' ? 'Experimental. ' : ''}Teste reservado: ${metrics.tp} de ${metrics.tp + metrics.fn} exemplos Ferris reconhecidos; ${metrics.fp} de ${metrics.fp + metrics.tn} janelas negativas acionadas. Valide também com áudio contínuo novo.` : '';
+  if (model) $('model-state').textContent = 'Detector ativo para testes no PC. ' + (model.split_mode === 'recordings' ? 'Versão experimental. ' : '') + 'Pesos exportados para o ESP32.';
+  if (running && !trainingPolling) pollTraining();
+}
+async function pollTraining() {
+  trainingPolling = true;
+  try {
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const job = await api('/api/training'); renderTraining(job);
+      if (job.state !== 'running') { await refresh(); break; }
+    }
+  } catch (e) {
+    $('training-state').textContent = 'Não foi possível acompanhar o treino. Recarregue o painel: ' + e.message;
+  } finally { trainingPolling = false; }
+}
+$('training-mode').onchange = () => { trainingChoice = true; };
+$('train-model').onclick = async () => {
+  $('train-model').disabled = true;
+  try {
+    renderTraining(await api('/api/train', {split_mode: $('training-mode').value, flash: $('flash-esp32').checked}));
+  } catch (e) { $('training-state').textContent = e.message; $('train-model').disabled = false; }
+};
 async function openSettings() {
   try {
     const {settings: s} = await refresh();
@@ -259,7 +299,10 @@ $('test-connection').onclick = async () => {
   finally { $('test-connection').disabled = false; }
 };
 $('listen').onclick = toggleListen; $('wake').onclick = () => wake(); $('stop').onclick = stopAll;
-$('voice-mode').onchange = () => { stopListening(); $('voice-note').textContent = $('voice-mode').value === 'local' ? 'Detecção ONNX e transcrição Whisper neste PC. Nenhum áudio vai ao LM Studio.' : 'No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.'; };
+$('voice-mode').onchange = () => {
+  stopListening();
+  $('voice-note').textContent = {esp: 'O ESP32 detecta “Ferris”. O microfone deste PC capta a pergunta; Whisper transcreve e Gemma responde aqui.', local: 'Teste do detector ONNX e transcrição Whisper neste PC. Nenhum áudio vai ao LM Studio.', browser: 'No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.'}[$('voice-mode').value];
+};
 $('chat-form').onsubmit = (e) => { e.preventDefault(); if (busy) return; const text = $('message').value.trim(); if (text) { $('message').value = ''; ask(text, $('search').checked); } };
 $('message').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } };
 document.querySelectorAll('[data-prompt]').forEach(b => b.onclick = () => ask(b.dataset.prompt));

@@ -128,6 +128,17 @@ class HTTPTests(unittest.TestCase):
     def test_cross_origin_denied(self):
         status,_=self.call('/api/settings',{'model':'bad'},{'Origin':'http://evil.example'})
         self.assertEqual(status,403)
+        status,_=self.call('/api/train',{'split_mode':'recordings'},{'Origin':'http://evil.example'})
+        self.assertEqual(status,403)
+
+    def test_training_endpoint_requires_data_and_valid_mode(self):
+        status,_=self.call('/api/train',{'split_mode':'shell'})
+        self.assertEqual(status,400)
+        status,_=self.call('/api/train',{'split_mode':'recordings'})
+        self.assertEqual(status,400)
+        status,body=self.call('/api/training')
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(body)['state'],'idle')
 
     def test_recordings_reject_muted_input_but_accept_quiet_ambience(self):
         def audio(pcm):
@@ -148,8 +159,11 @@ class HTTPTests(unittest.TestCase):
     def test_device_token_and_event(self):
         status,_=self.call('/api/device/wake',{'device':'esp32'})
         self.assertEqual(status,401)
-        status,body=self.call('/api/device/wake',{'device':'esp32','confidence':.9},{'Authorization':'Bearer device-secret'})
+        payload={'device':'esp32','confidence':.9,'event_id':'boot-123'}
+        status,body=self.call('/api/device/wake',payload,{'Authorization':'Bearer device-secret'})
         self.assertEqual(status,200); self.assertEqual(json.loads(body)['device'],'esp32')
+        status,duplicate=self.call('/api/device/wake',payload,{'Authorization':'Bearer device-secret'})
+        self.assertEqual(status,200); self.assertEqual(json.loads(duplicate)['id'],json.loads(body)['id'])
 
     def test_bad_input_and_traversal(self):
         status,_=self.call('/api/chat',{'text':'hi','session':'../bad'}); self.assertEqual(status,400)

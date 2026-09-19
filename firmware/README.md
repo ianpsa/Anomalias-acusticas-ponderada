@@ -55,7 +55,7 @@ Sem `main/model_weights.h`, o firmware compila em modo de diagnóstico: captura 
 | `controls` | 4 | Botão com debounce, mute por geração, LEDs vermelho/verde; polling de 10 ms |
 | `features` | 3 | Retira bloco emprestado do ring, copia para janela circular de 1 s, devolve imediatamente; extrai a cada 250 ms; fila de 3 vetores |
 | `detect` | 2 | Consome vetor por cópia, executa os pesos equivalentes ao ONNX, exige duas janelas positivas, solicita pulso no verde de 300 ms, cooldown 3 s |
-| `network` | 1 | Consome fila de 4 eventos, faz HTTP com timeout de 2 s; nunca bloqueia captura ou inferência |
+| `network` | 1 | Consome fila de 4 eventos, emite evento USB e faz HTTP com timeout de 2 s quando o Wi-Fi está configurado; nunca bloqueia captura ou inferência |
 
 O ring buffer `RINGBUF_TYPE_NOSPLIT` é finito (alocação de oito estruturas de bloco; overhead interno reduz a capacidade útil). Se cheio, a captura descarta o bloco novo e contabiliza a perda. Números de sequência identificam lacunas; a extração reinicia a janela, e a detecção reinicia as confirmações para não combinar trechos descontínuos. As filas têm envio sem espera, com contadores de descarte.
 
@@ -74,6 +74,12 @@ A serial emite uma linha JSON dentro da mensagem de log, aproximadamente a cada 
 
 Meça também memória livre, watermark de stack e taxa de amostragem real na placa antes de finalizar o relatório. Tempo de espera da janela, segunda confirmação, rede, transcrição, LLM e síntese devem ser apresentados separadamente. O modelo linear pode ser rápido e ainda produzir uma latência perceptível devido à janela e às confirmações.
 
-## Limite desta entrega inicial
+## Eventos USB e Wi-Fi
 
-O evento de ativação chega ao painel do PC, que reproduz a saudação. Captura da pergunta e resposta falada continuam no PC. O firmware não faz streaming da pergunta nem recebe PCM/TTS, e não implementa saída I2S ou Bluetooth de alto-falante. Esses caminhos dependem da definição da placa e da saída de áudio.
+Além do HTTP, cada detecção emite `FERRIS_WAKE ` seguido de JSON na serial a 115200 baud. O campo `event_id` combina um identificador de boot com um contador. A ponte Ferris descarta duplicatas desse ID recebidas por USB e HTTP. A USB funciona sem configurar Wi-Fi; SSID, senha, URL e token continuam disponíveis em `menuconfig` para usar uma ponte remota depois.
+
+O painel **Minha voz → Treinar e usar modelo** pode compilar e gravar a placa com **Gravar também no ESP32 conectado por USB** marcado. É necessário Docker e acesso à porta serial. O firmware nunca executa o treinamento, Whisper ou Gemma.
+
+## Divisão do processamento
+
+O evento de ativação chega ao painel do PC, que reproduz a saudação. O microfone do PC capta a pergunta, Whisper transcreve e Gemma responde. A placa fica com a detecção, LEDs, mute e transporte de eventos; não faz streaming da pergunta nem recebe PCM/TTS.

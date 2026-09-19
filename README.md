@@ -56,7 +56,8 @@ Para conferir o serviço, use `lms ps` e `curl http://127.0.0.1:1234/v1/models`.
 - **Conversa:** texto, fontes da pesquisa e leitura das respostas em português.
 - **Chamar Ferris:** testa a saudação contextual sem precisar de microfone ou modelo treinado.
 - **Voz do navegador:** reconhece “Ferris” por transcrição e abre uma janela de conversa de 20 segundos. Requer navegador com `SpeechRecognition`, normalmente Chromium/Chrome. O serviço de reconhecimento pode processar áudio online; não é o detector ONNX embarcado.
-- **Local: ONNX + Whisper:** usa seu detector treinado e transcrição no PC. Requer os passos de treinamento e voz local abaixo.
+- **ESP32 + Whisper neste PC:** a placa detecta “Ferris”; o microfone do PC capta a pergunta, Whisper transcreve e Gemma responde. Este é o modo principal.
+- **Testar detector e Whisper no PC:** alternativa para avaliar o ONNX sem depender da placa.
 - **Parar:** interrompe a fala e desliga o microfone. Depois de uma resposta, Ferris permite outra pergunta sem repetir o nome, até expirar a janela.
 - **Minha voz:** grava e importa exemplos para o treinamento. Os áudios e as chaves ficam em `data/`, ignorado pelo Git.
 
@@ -73,9 +74,9 @@ O reconhecimento/áudio do navegador exige um contexto seguro: use `localhost` n
 | Pesquisa Google | Integração SerpApi implementada; depende de chave e acesso ao provedor |
 | Gravação de exemplos WAV e pipeline de treinamento | Implementados |
 | Inferência ONNX no PC e exportação equivalente em C | Implementadas; equivalência numérica testada |
-| Modelo pessoal que reconhece “Ferris” | **Pendente dos áudios reais; nenhum modelo de voz fictício é incluído** |
+| Modelo pessoal que reconhece “Ferris” | Treino disponível no painel, com avaliação e ativação; a qualidade depende das gravações reais |
 | Firmware FreeRTOS | Compilado e gravado no ESP32; captura e mute verificados em hardware. Inferência real depende do detector treinado; veja [validação física](docs/HARDWARE_CHECK.md) |
-| Conversa inteiramente pelo ESP32, com microfone e saída própria | Próxima etapa: transportar a pergunta e reproduzir a resposta após definir o hardware de saída |
+| Whisper, Gemma e reprodução da resposta | Executados no PC; o ESP32 fica com captura para detecção, controles e eventos |
 
 O evento do ESP32 aciona a saudação no painel aberto do PC. Nesta fase, a pergunta seguinte e a reprodução da resposta usam o áudio do PC. Não há implementação de alto-falante Bluetooth no ESP32.
 
@@ -98,6 +99,12 @@ Em **Minha voz**, colete as classes `Ferris`, `Outras palavras` e `Ambiente`. Gr
 O painel grava pelo **microfone do PC selecionado no navegador**. Durante a captura, confira o nome da entrada e o medidor de nível. Arquivos com todas as amostras zeradas são rejeitados: confira o mute do sistema e a entrada selecionada antes de repetir a gravação. O silêncio real do ambiente pode conter sinal muito baixo e continua sendo aceito como exemplo negativo.
 
 Mude o campo **Sessão de gravação** ao mudar de dia ou ambiente. São exigidas no mínimo quatro sessões diferentes, contendo positivos e negativos em cada uma, e pelo menos 12 positivos e 12 negativos no total. Esse mínimo serve para executar o pipeline; comece com dezenas ou centenas de exemplos variados para avaliar utilidade real. Um detector treinado só com sua voz não garante reconhecer outras pessoas, nem funciona como autenticação de identidade.
+
+No painel, abra **Minha voz → Treinar o detector**. Escolha **Experimental** para uma primeira coleta ou **Sessões diferentes** para a avaliação entre sessões e clique em **Treinar e usar modelo**. O trabalho acontece em segundo plano; você pode recarregar a página e acompanhar o estado. Ao terminar, o painel mostra quantos exemplos Ferris foram reconhecidos e quantas janelas negativas dispararam. O modelo novo só substitui o anterior após validar a inferência; uma falha de treino mantém a versão anterior.
+
+Marque **Gravar também no ESP32 conectado por USB** para compilar e gravar os pesos na placa no mesmo fluxo. Requer Docker acessível ao usuário do Ferris, a imagem `espressif/idf:v5.4.2` e acesso à porta serial. O leitor USB é pausado durante a gravação e retomado depois. Se a gravação falhar, o modelo novo permanece disponível no PC e o painel informa que a placa não foi atualizada. O LLM não tem acesso a esse comando: é uma ação do painel autenticado.
+
+Para preparar as dependências ou treinar pelo terminal:
 
 ```bash
 python3 -m venv .venv
@@ -125,7 +132,7 @@ Esse modo separa arquivos inteiros em aproximadamente 60% treino, 20% validaçã
 
 O ONNX recebe `features: float32[batch, 150]` e retorna `probability: float32[batch, 1]`. O PC executa o arquivo com ONNX Runtime. O ESP32 executa os mesmos pesos exportados como produto escalar + sigmoide; não executa ONNX Runtime. Ambos usam o mesmo extrator C. O arquivo ONNX é o artefato de modelo da entrega.
 
-Reinicie o serviço Ferris após treinar novamente. Arquivos gerados são ignorados pelo Git; após validar o modelo real, publique os artefatos de forma deliberada para a entrega, sem incluir seus áudios privados.
+O treino pelo painel ativa uma versão em `models/runs/`, apontada por `models/active.json`, sem reiniciar o serviço. Os logs ficam em `data/training/`, e o cabeçalho exportado fica em `firmware/main/model_weights.h`. O treino manual acima gera os arquivos diretamente em `models/`; se já existe uma versão ativa do painel, use o botão para substituí-la. Arquivos gerados são ignorados pelo Git; após validar o modelo real, publique os artefatos de forma deliberada para a entrega, sem incluir seus áudios privados.
 
 Para importar gravações em outro formato, converta-as e recorte clipes de até 5 segundos. Exemplo de conversão:
 
@@ -135,24 +142,30 @@ ffmpeg -i exemplo.m4a -ac 1 -ar 16000 -c:a pcm_s16le exemplo.wav
 
 ## Voz local no PC
 
-O modo local precisa de um modelo Whisper no formato CTranslate2 já disponível em disco. Ele é usado exclusivamente para transcrição, enquanto o Gemma no LM Studio gera as respostas. O serviço Ferris não baixa modelos automaticamente. Instalar o Gemma não habilita sozinho a transcrição nem o detector ONNX.
+O **Whisper small** roda em CPU/int8 neste PC e transcreve português. O **Gemma no LM Studio** gera as respostas; o **ESP32** executa apenas o detector e seus controles. O download inicial é separado da transcrição, que usa somente arquivos locais.
 
 ```bash
 source .venv/bin/activate
-python -m pip install -e '.[voice]'
-export FERRIS_WHISPER_MODEL=/caminho/para/modelo-whisper-local
+python -m pip install -e '.[train,voice,device]'
+python tools/setup_whisper.py
 python -m ferris.server
 ```
 
-Depois de treinar o ONNX e configurar o Whisper, selecione **Local: ONNX + Whisper** e ative o microfone. A detecção exige duas janelas positivas consecutivas. Depois da saudação, a captura da pergunta termina com aproximadamente 850 ms de silêncio ou no limite de 12 segundos. O limiar inicial de voz é fixo e precisa ser ajustado se o ambiente ou microfone exigir. A síntese usa uma voz pt-BR do navegador/sistema, preferindo voz local quando disponível.
+O servidor encontra automaticamente `data/whisper/small`. Para outro modelo local CTranslate2, exporte `FERRIS_WHISPER_MODEL=/caminho/do/modelo`. O download precisa ser feito apenas uma vez.
+
+Selecione **ESP32 + Whisper neste PC** e clique em **Ativar microfone**. Diga “Ferris” perto do INMP441 e, após a saudação, faça a pergunta no microfone do PC. A detecção da placa exige duas janelas positivas consecutivas. A captura da pergunta termina com aproximadamente 850 ms de silêncio ou no limite de 12 segundos. O limiar inicial de voz é fixo e precisa ser ajustado se o ambiente ou microfone exigir. A síntese usa uma voz pt-BR do navegador/sistema, preferindo voz local quando disponível. Em **Testar detector e Whisper no PC**, a mesma sequência pode ser avaliada usando apenas o microfone do PC.
 
 ## ESP32 e FreeRTOS
 
-Consulte [firmware/README.md](firmware/README.md) para pinagem, configuração e compilação. O alvo inicial é o **ESP32 original**, com INMP441 e LED. A placa exata e a saída de áudio ainda precisam ser confirmadas.
+Consulte [firmware/README.md](firmware/README.md) para pinagem, configuração e compilação. A montagem usa **ESP-32U**, INMP441, dois LEDs e botão. A saída de voz fica no PC.
 
 ![Tarefas e sincronização FreeRTOS](docs/rtos.svg)
 
-O microcontrolador envia eventos ao serviço **Ferris no PC**, não diretamente ao LM Studio. Para receber eventos na LAN:
+O microcontrolador envia eventos ao serviço **Ferris no PC**, não diretamente ao LM Studio. USB e Wi-Fi usam o mesmo identificador de evento para evitar duas saudações quando ambos chegam ao mesmo servidor.
+
+**USB:** o servidor identifica automaticamente a ponte CP2102 em Linux. Feche outros monitores seriais antes de iniciar o Ferris. Para selecionar a porta: `python -m ferris.server --serial-port /dev/ttyUSB0`. Para usar somente Wi-Fi, passe `--serial-port ''`.
+
+**Wi-Fi/servidor remoto:** configure SSID, senha, URL da ponte e token em `idf.py menuconfig` (opções Ferris), depois regrave a placa. Na máquina que receberá os eventos:
 
 ```bash
 export FERRIS_TOKEN='defina-um-token-de-painel-com-24-ou-mais-caracteres'

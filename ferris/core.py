@@ -132,6 +132,7 @@ class Assistant:
         self.inference = threading.BoundedSemaphore(1)
         self.events = deque(maxlen=100)
         self.event_id = 0
+        self.device_events = OrderedDict()
 
     def models(self):
         s = self.settings.get()
@@ -145,12 +146,19 @@ class Assistant:
         with self.lock:
             self.sessions.pop(session, None)
 
-    def wake(self, device, confidence=None, metrics=None):
+    def wake(self, device, confidence=None, metrics=None, device_event_id=None):
         with self.lock:
+            key = (device, device_event_id)
+            if device_event_id and key in self.device_events:
+                return self.device_events[key]
             self.event_id += 1
             event = dict(id=self.event_id, device=device, confidence=confidence,
                          metrics=metrics or {}, timestamp=time.time(), text=greeting(self.settings.get()))
             self.events.append(event)
+            if device_event_id:
+                self.device_events[key] = event
+                while len(self.device_events) > 128:
+                    self.device_events.popitem(last=False)
             return event
 
     def search(self, query):

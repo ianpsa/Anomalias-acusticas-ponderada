@@ -6,7 +6,7 @@ O padrão escolhido é a palavra de ativação **Ferris**, usada para acionar um
 
 O ESP32 com INMP441 captura áudio continuamente e executa tarefas FreeRTOS de captura, extração de características e detecção. O computador local fornece controles e áudio na primeira fase. A conversa é atendida por **Gemma no LM Studio, no mesmo PC do Ferris**. O LM Studio é instalado separadamente; este repositório implementa o cliente HTTP e documenta sua configuração local. Um servidor em outro computador continua sendo uma opção pela URL de conexão.
 
-O detector terá um artefato ONNX treinado com exemplos reais. O Ferris pode conversar e pesquisar, mas não fornece ferramentas para programar ou executar comandos.
+O detector tem um artefato ONNX treinado com exemplos reais. O painel inicia o treino, mostra métricas e permite gravar os pesos no ESP32 por USB. A placa envia eventos por USB e Wi-Fi; Whisper, Gemma e saída de voz ficam no PC. O Ferris pode conversar e pesquisar, mas não fornece ao modelo ferramentas para programar ou executar comandos.
 
 Requisitos acadêmicos: pelo menos três tarefas sincronizadas, modelo treinado, alerta por LED/buzzer, medições de latência, diagrama de concorrência, relatório e script de teste. O PDF informa entrega em 18/09/2026 e demonstração em 21/09/2026.
 

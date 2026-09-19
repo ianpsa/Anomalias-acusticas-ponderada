@@ -22,7 +22,7 @@
  <text x="710" y="280" class="body">Cooldown: 3 s · pulso: 300 ms</text><text x="710" y="313" class="tiny">Sem espera por HTTP</text>
  <rect x="1010" y="166" width="220" height="174" rx="14" class="box"/>
  <text x="1030" y="198" class="label">Rede · prioridade 1</text>
- <text x="1030" y="228" class="body">HTTP → ponte no PC</text><text x="1030" y="254" class="body">Timeout: 2 segundos</text>
+ <text x="1030" y="228" class="body">USB + HTTP → PC</text><text x="1030" y="254" class="body">HTTP: timeout 2 s</text>
  <text x="1030" y="280" class="body">Token do dispositivo</text><text x="1030" y="313" class="tiny">Sem replay de evento antigo</text>
  <path d="M290 250H358" class="line"/><path d="M620 250H688" class="line"/><path d="M940 250H1008" class="line"/>
  <rect x="170" y="366" width="270" height="72" rx="10" class="queue"/><text x="186" y="391" class="body">Ring buffer NO-SPLIT</text><text x="186" y="415" class="tiny">Envio sem espera; propriedade temporária</text>
@@ -37,9 +37,9 @@
  <rect x="50" y="604" width="740" height="164" rx="16" class="box"/>
  <text x="73" y="637" class="label">PC local: serviço Ferris + painel aberto</text>
  <text x="73" y="666" class="body">Evento do ESP32 → saudação contextual → saída de áudio do PC</text>
- <text x="73" y="692" class="body">Pergunta no microfone do PC → transcrição → cliente HTTP do LM Studio</text>
+ <text x="73" y="692" class="body">Microfone do PC → Whisper local → Gemma no LM Studio → voz no PC</text>
  <text x="73" y="719" class="body">Alternativa sem placa: detector ONNX + Whisper no próprio PC</text>
- <text x="73" y="747" class="tiny">Saída de voz no ESP32 e transporte da pergunta embarcada: próximos passos após definir o hardware</text>
+ <text x="73" y="747" class="tiny">Painel treina e grava o detector no ESP32 por USB. Whisper e Gemma ficam no PC.</text>
  <rect x="880" y="604" width="350" height="164" rx="16" class="box"/>
  <text x="904" y="637" class="label">Mesmo PC: LM Studio + Gemma</text>
  <text x="904" y="671" class="body">Recebe texto, devolve resposta</text><text x="904" y="702" class="body">API local: 127.0.0.1:1234/v1</text>
