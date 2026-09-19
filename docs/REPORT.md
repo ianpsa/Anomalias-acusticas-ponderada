@@ -14,7 +14,7 @@ Veja [o diagrama SVG](rtos.svg) e [a descrição do firmware](../firmware/README
 
 O ring buffer transfere propriedade temporária dos blocos. A tarefa de features copia a informação antes de devolvê-los. A janela de 16.000 amostras pertence a uma única tarefa. Filas com cópia transferem vetores e eventos. Os contadores têm seção crítica curta; rede e cálculos não seguram locks de aplicação. Em sobrecarga, perdas são explícitas em vez de causar crescimento de memória ou bloqueio da captura.
 
-Mute físico alterna em um botão GPIO 27 com pull-up e debounce de 30 ms. A geração do áudio muda em cada alternância: consumidores descartam dados antigos mesmo após retomar. Só a tarefa de captura controla I2S; depois de silenciar, ela desativa o canal ao sair da leitura corrente. A retomada descarta quatro blocos de DMA e refaz a janela. Os controles indicam captura inativa em vermelho (18) e ativa em verde (19), com pulso de ativação no verde. Testes C no host verificam bounce, botão segurado e rejeição de áudio de gerações antigas; resposta física do botão e LEDs ainda precisa ser medida na placa.
+Mute físico alterna em um botão GPIO 23 com pull-up e debounce de 30 ms. A geração do áudio muda em cada alternância: consumidores descartam dados antigos mesmo após retomar. Só a tarefa de captura controla I2S; depois de silenciar, ela desativa o canal ao sair da leitura corrente. A retomada descarta quatro blocos de DMA e refaz a janela. Os controles indicam captura inativa em vermelho (18) e ativa em verde (19), com pulso de ativação no verde. Testes C no host verificam bounce, botão segurado e rejeição de áudio de gerações antigas; resposta física do botão e LEDs ainda precisa ser medida na placa.
 
 ## Modelo
 

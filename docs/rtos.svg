@@ -46,6 +46,6 @@
  <text x="904" y="738" class="tiny">Não é instalado por este projeto</text>
  <path d="M1140 340V575H470V602" class="line"/>
  <path d="M790 658H878" class="line"/><path d="M880 715H792" class="line"/>
- <text x="50" y="791" class="body">Controles · prioridade 4: botão 27 alterna mute; vermelho 18 / verde 19. Cada clique invalida a geração anterior de áudio.</text>
+ <text x="50" y="791" class="body">Controles · prioridade 4: botão 23 alterna mute; vermelho 18 / verde 19. Cada clique invalida a geração anterior de áudio.</text>
  <text x="50" y="824" class="tiny">Modelo: treino no PC → wake.onnx + pesos C. Mesmo frontend DSP em ambos. Alerta local funciona sem PC após treinar e gravar.</text>
 </svg>

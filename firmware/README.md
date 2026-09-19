@@ -19,7 +19,7 @@ Pinagem confirmada pelo usuário para o ESP-32U: SD 22, SCK 26, WS 25, LED verme
 |---|---|
 | LED vermelho — captura inativa/mute | GPIO 18 → resistor 330 Ω → ânodo; cátodo → GND |
 | LED verde — escuta ativa | GPIO 19 → resistor 330 Ω → ânodo; cátodo → GND |
-| Botão de mute (pino proposto) | GPIO 27 → botão normalmente aberto → GND; pull-up interno |
+| Botão de mute | GPIO 23 → botão normalmente aberto → GND; pull-up interno |
 
 Cada LED precisa de seu próprio resistor. O botão de quatro pernas deve usar dois contatos que só tenham continuidade quando pressionado. Um capacitor cerâmico de 100 nF (`104`) pode desacoplar VDD/GND próximo ao microfone. Desconecte o USB durante a montagem e alimente o microfone em 3,3 V. Os pinos são configuráveis em `menuconfig`; estas escolhas não se aplicam automaticamente a ESP32-S3/C3.
 
@@ -43,7 +43,7 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 Em **Ferris**, configure Wi-Fi, pinos, URL do evento no PC e token do dispositivo. O endereço deve terminar em `/api/device/wake`. As credenciais de Wi-Fi ficam em `sdkconfig`, ignorado pelo Git, e dentro do firmware compilado; não publique esses binários com credenciais pessoais.
 
-Se já existir um `sdkconfig` antigo, confira SD=22 em `menuconfig`: mudar o valor padrão no código não substitui automaticamente uma configuração salva. Confira também LEDs 18/19 e botão 27. A inicialização rejeita GPIOs duplicados.
+Se já existir um `sdkconfig` antigo, confira SD=22 em `menuconfig`: mudar o valor padrão no código não substitui automaticamente uma configuração salva. Confira também LEDs 18/19 e botão 23. A inicialização rejeita GPIOs duplicados.
 
 Sem `main/model_weights.h`, o firmware compila em modo de diagnóstico: captura áudio e registra métricas, mas **não declara detecção de Ferris**. O treinamento executado na raiz gera esse cabeçalho junto com `models/wake.onnx`. Recompile e grave novamente após treinar.
 

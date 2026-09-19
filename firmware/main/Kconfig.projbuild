@@ -28,5 +28,5 @@ config FERRIS_LED_GREEN
     default 19
 config FERRIS_MUTE_BUTTON
     int "Mute toggle button GPIO (button to GND, internal pull-up)"
-    default 27
+    default 23
 endmenu
