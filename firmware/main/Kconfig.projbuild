@@ -1,0 +1,26 @@
+menu "Ferris"
+config FERRIS_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+config FERRIS_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+config FERRIS_BRIDGE_URL
+    string "Ferris PC wake endpoint (NOT LM Studio)"
+    default "http://192.168.1.10:8765/api/device/wake"
+config FERRIS_DEVICE_TOKEN
+    string "FERRIS_DEVICE_TOKEN from PC"
+    default ""
+config FERRIS_BCLK
+    int "INMP441 SCK GPIO"
+    default 26
+config FERRIS_WS
+    int "INMP441 WS GPIO"
+    default 25
+config FERRIS_DIN
+    int "INMP441 SD GPIO"
+    default 33
+config FERRIS_LED
+    int "Alert LED GPIO (with resistor)"
+    default 2
+endmenu
