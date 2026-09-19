@@ -19,8 +19,14 @@ config FERRIS_WS
     default 25
 config FERRIS_DIN
     int "INMP441 SD GPIO"
-    default 33
-config FERRIS_LED
-    int "Alert LED GPIO (with resistor)"
-    default 2
+    default 22
+config FERRIS_LED_RED
+    int "Red LED GPIO: muted / capture inactive (with resistor)"
+    default 18
+config FERRIS_LED_GREEN
+    int "Green LED GPIO: listening (with resistor)"
+    default 19
+config FERRIS_MUTE_BUTTON
+    int "Mute toggle button GPIO (button to GND, internal pull-up)"
+    default 27
 endmenu

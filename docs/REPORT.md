@@ -10,9 +10,11 @@ O PC oferece uma primeira interface utilizável, coleta dados e conecta ao LM St
 
 ## Arquitetura
 
-Veja [o diagrama SVG](rtos.svg) e [a descrição do firmware](../firmware/README.md). As prioridades relativas são captura 5, features 3, detecção 2 e rede 1. Não se exige fixação de tarefa em um núcleo específico; o ESP-IDF gerencia o escalonamento. A leitura I2S usa DMA e bloqueia a tarefa até dados estarem disponíveis, sem processamento pesado em ISR.
+Veja [o diagrama SVG](rtos.svg) e [a descrição do firmware](../firmware/README.md). As prioridades relativas são captura 5, controles físicos 4, features 3, detecção 2 e rede 1. Não se exige fixação de tarefa em um núcleo específico; o ESP-IDF gerencia o escalonamento. A leitura I2S usa DMA e bloqueia a tarefa até dados estarem disponíveis, sem processamento pesado em ISR.
 
 O ring buffer transfere propriedade temporária dos blocos. A tarefa de features copia a informação antes de devolvê-los. A janela de 16.000 amostras pertence a uma única tarefa. Filas com cópia transferem vetores e eventos. Os contadores têm seção crítica curta; rede e cálculos não seguram locks de aplicação. Em sobrecarga, perdas são explícitas em vez de causar crescimento de memória ou bloqueio da captura.
+
+Mute físico alterna em um botão GPIO 27 com pull-up e debounce de 30 ms. A geração do áudio muda em cada alternância: consumidores descartam dados antigos mesmo após retomar. Só a tarefa de captura controla I2S; depois de silenciar, ela desativa o canal ao sair da leitura corrente. A retomada descarta quatro blocos de DMA e refaz a janela. Os controles indicam captura inativa em vermelho (18) e ativa em verde (19), com pulso de ativação no verde. Testes C no host verificam bounce, botão segurado e rejeição de áudio de gerações antigas; resposta física do botão e LEDs ainda precisa ser medida na placa.
 
 ## Modelo
 
@@ -26,7 +28,7 @@ O treino separa sessões de gravação completas, rejeita duplicatas exatas e ap
 
 Os testes automatizados cobrem a API, credenciais, isolamento de sessões, conversa remota simulada, ferramentas permitidas, erros, validação de WAV, comportamento do DSP, treinamento/exportação ONNX e equivalência C/ONNX. O navegador é testado com Chromium headless, microfone artificial e servidor remoto simulado.
 
-Em 19/09/2026, os 17 testes Python passaram e o firmware em modo diagnóstico foi compilado com sucesso para ESP32 usando a imagem oficial `espressif/idf:v5.4.2`. O binário ocupou `0xbd530` bytes (775.472 bytes), com aproximadamente 26% da partição de aplicação de 1 MiB livres. Compilar não valida a pinagem, captura física ou deadlines no dispositivo. O cabeçalho do modelo real ainda depende da coleta e treinamento.
+Em 19/09/2026, os 18 testes Python passaram (incluindo debounce e invalidação de áudio no mute) e o firmware em modo diagnóstico foi compilado com sucesso para ESP32 usando a imagem oficial `espressif/idf:v5.4.2`. O binário ocupou `0xbde20` bytes (777.760 bytes), com aproximadamente 26% da partição de aplicação de 1 MiB livres. Compilar não valida a pinagem, captura física ou deadlines no dispositivo. O cabeçalho do modelo real ainda depende da coleta e treinamento.
 
 A execução de teste com tons sintéticos obteve erro absoluto máximo aproximado de **5,97 × 10⁻⁸** entre ONNX Runtime e o classificador C no host. Essa evidência valida a implementação numérica e o pipeline, **não a acurácia de “Ferris”**, a aritmética do alvo físico ou a latência do ESP32. Nenhum resultado sintético deve ser apresentado como resultado de fala real.
 

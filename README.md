@@ -40,6 +40,8 @@ O reconhecimento/áudio do navegador exige um contexto seguro: use `localhost` n
 
 O evento do ESP32 aciona a saudação no painel aberto do PC. Nesta fase, a pergunta seguinte e a reprodução da resposta usam o áudio do PC. Não há implementação de alto-falante Bluetooth no ESP32.
 
+Na montagem ESP-32U confirmada, o microfone usa **SD 22, SCK 26 e WS 25**, o LED vermelho usa **18** e o verde **19**. O botão proposto no **GPIO 27 para GND** alterna o mute do ESP32: vermelho indica captura inativa e verde indica escuta. O firmware descarta dados antigos na retomada. Cada LED precisa de resistor em série. Esse botão não controla o microfone independente do navegador.
+
 ## Pesquisa e capacidades do Ferris
 
 O serviço local oferece ao modelo apenas `web_search`. Para pesquisar resultados Google automaticamente, forneça uma chave **SerpApi** em Conexão. A consulta é enviada ao provedor e os resultados entram como dados para o modelo remoto; as fontes aparecem no painel. Sem chave, um pedido de pesquisa oferece um link de busca no Google, sem inventar resultados.
