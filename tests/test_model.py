@@ -32,6 +32,20 @@ class DSPTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('onnxruntime') and importlib.util.find_spec('sklearn'),'Install .[train]')
 class ONNXTests(unittest.TestCase):
+    def test_exploratory_split_keeps_files_whole_and_all_classes(self):
+        from tools.train_wake import split_recordings, split_sessions
+        records=[{'group':'one-session','category':category,'label':int(category=='ferris')}
+                 for category in ('ferris','other','noise') for _ in range(20)]
+        with self.assertRaisesRegex(ValueError,'4 sessões'):
+            split_sessions(records)
+        splits=split_recordings(records)
+        all_ids=[]
+        for name,ids in splits.items():
+            self.assertEqual({records[i]['category'] for i in ids},{'ferris','other','noise'})
+            self.assertEqual(list(ids),list(split_recordings(records)[name]))
+            all_ids.extend(ids)
+        self.assertEqual(sorted(all_ids),list(range(len(records))))
+
     def test_synthetic_pipeline_export_split_and_runtime_parity(self):
         # Synthetic tones only test plumbing. Never report these as wake-word accuracy.
         import numpy as np
@@ -52,6 +66,10 @@ class ONNXTests(unittest.TestCase):
             output=root/'model'; metadata=train(data,output,root/'weights.h')
             onnx.checker.check_model(onnx.load(output/'wake.onnx'))
             self.assertLess(metadata['onnx_c_max_error'],1e-4)
+            self.assertEqual(metadata['split_mode'],'sessions')
+            recording_ids=[digest for ids in metadata['split_recordings'].values() for digest in ids]
+            self.assertEqual(len(recording_ids),len(metadata['recordings']))
+            self.assertEqual(len(set(recording_ids)),len(recording_ids))
             splits=metadata['splits']
             self.assertFalse(set(splits['train']) & set(splits['test']))
             self.assertFalse(set(splits['validation']) & set(splits['test']))

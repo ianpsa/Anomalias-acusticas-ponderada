@@ -115,6 +115,14 @@ Requer compilador C (`cc`/GCC) para compilar a extração compartilhada. Python 
 5. Gera `models/wake.onnx`, `models/wake.json` e `firmware/main/model_weights.h`.
 6. Compara a probabilidade ONNX com a implementação C, exigindo erro absoluto ≤ `1e-4`.
 
+Se ainda tem apenas uma sessão, é possível gerar uma **versão experimental**:
+
+```bash
+python tools/train_wake.py --split-mode recordings
+```
+
+Esse modo separa arquivos inteiros em aproximadamente 60% treino, 20% validação e 20% teste, mantendo as classes nos três conjuntos. Janelas do mesmo arquivo e suas versões aumentadas ficam no mesmo conjunto. A sessão pode se repetir entre conjuntos, portanto as métricas não medem generalização para outro dia, ambiente ou microfone. O relatório registra `split_mode`, hashes por conjunto e essa limitação. Não renomeie artificialmente gravações da mesma coleta como sessões diferentes; colete novas sessões para a avaliação final. O comando sem essa opção continua exigindo a separação por sessões.
+
 O ONNX recebe `features: float32[batch, 150]` e retorna `probability: float32[batch, 1]`. O PC executa o arquivo com ONNX Runtime. O ESP32 executa os mesmos pesos exportados como produto escalar + sigmoide; não executa ONNX Runtime. Ambos usam o mesmo extrator C. O arquivo ONNX é o artefato de modelo da entrega.
 
 Reinicie o serviço Ferris após treinar novamente. Arquivos gerados são ignorados pelo Git; após validar o modelo real, publique os artefatos de forma deliberada para a entrega, sem incluir seus áudios privados.

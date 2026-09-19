@@ -1,7 +1,8 @@
 """Train an ONNX wake-word baseline and export identical affine weights for ESP32.
 
-Splits entire recording sessions BEFORE extracting windows. Never uses test data
-to choose the threshold. A baseline is not a claim of production wake-word quality.
+By default, splits entire recording sessions BEFORE extracting windows. The opt-in
+recordings mode is exploratory and can share a session across splits. Never uses
+test data to choose the threshold. A baseline is not a production quality claim.
 """
 import argparse
 import ctypes
@@ -47,6 +48,17 @@ def split_sessions(records):
     raise ValueError('Não foi possível separar sessões mantendo positivos e negativos em todos os conjuntos.')
 
 
+def split_recordings(records):
+    """Exploratory holdout: whole files, with each original class represented."""
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+    ids = np.arange(len(records))
+    classes = np.array([r['category'] for r in records])
+    trainval, test = train_test_split(ids, test_size=.2, random_state=42, stratify=classes)
+    train, val = train_test_split(trainval, test_size=.25, random_state=42, stratify=classes[trainval])
+    return {'train': train, 'validation': val, 'test': test}
+
+
 def report(y, probabilities, threshold):
     import numpy as np
     predicted = probabilities >= threshold; y = np.asarray(y)
@@ -56,7 +68,7 @@ def report(y, probabilities, threshold):
                 false_positive_rate=fp/max(1,fp+tn), accuracy=(tp+tn)/len(y))
 
 
-def train(data, output, header=None):
+def train(data, output, header=None, split_mode='sessions'):
     import numpy as np
     import onnx
     import onnxruntime as ort
@@ -76,10 +88,17 @@ def train(data, output, header=None):
             if digest in seen:
                 raise ValueError(f'Áudio duplicado: {path}. Remova duplicatas antes de avaliar.')
             seen.add(digest)
-            records.append(dict(path=path, pcm=pcm, group=path.parent.name, label=int(label == 'ferris'), sha256=digest))
+            records.append(dict(path=path, pcm=pcm, group=path.parent.name, label=int(label == 'ferris'), category=label, sha256=digest))
     if sum(r['label'] for r in records) < 12 or sum(not r['label'] for r in records) < 12:
         raise ValueError('São necessários pelo menos 12 exemplos Ferris e 12 negativos. Para qualidade, colete muito mais.')
-    splits = split_sessions(records)
+    if split_mode == 'sessions':
+        splits = split_sessions(records)
+    elif split_mode == 'recordings':
+        print('Avaliação exploratória por gravação: as sessões podem se repetir entre conjuntos. '
+              'Valide em novas sessões antes de usar como resultado final.', file=sys.stderr)
+        splits = split_recordings(records)
+    else:
+        raise ValueError('Modo de separação inválido: use sessions ou recordings.')
     frontend = Features(build()); arrays = {}
     for name, ids in splits.items():
         xs, ys = [], []
@@ -128,10 +147,13 @@ def train(data, output, header=None):
                     dsp_sha256=hashlib.sha256((ROOT/'firmware/components/ferris_dsp/ferris_dsp.c').read_bytes()).hexdigest(),
                     model_sha256=hashlib.sha256((output/'wake.onnx').read_bytes()).hexdigest(),
                     validation=report(vy, vp, threshold), test=report(ty, probs, threshold),
-                    onnx_c_max_error=error,
+                    onnx_c_max_error=error, split_mode=split_mode, metric_unit='one_second_window',
                     splits={name: sorted({records[i]['group'] for i in ids}) for name, ids in splits.items()},
+                    split_recordings={name: [records[i]['sha256'] for i in ids] for name, ids in splits.items()},
                     recordings=[{k: str(v) if k == 'path' else v for k,v in r.items() if k != 'pcm'} for r in records],
-                    limitations='Baseline linear; validar falsos acionamentos/hora em áudio contínuo real. Não é identificação biométrica.')
+                    limitations=('Avaliação exploratória por arquivos; não mede generalização entre sessões. '
+                                 if split_mode == 'recordings' else '')
+                    +'Baseline linear; validar falsos acionamentos/hora em áudio contínuo real. Não é identificação biométrica.')
     (output/'wake.json').write_text(json.dumps(metadata, indent=2, ensure_ascii=False)+'\n')
     if header:
         header = Path(header); header.parent.mkdir(parents=True, exist_ok=True)
@@ -141,7 +163,7 @@ def train(data, output, header=None):
                           +f'#define FERRIS_THRESHOLD {cfloat(threshold)}\n'
                           +'static const float ferris_weights[150] = {'+','.join(map(cfloat,weights))+'};\n'
                           +f'static const float ferris_bias = {cfloat(bias)};\n')
-    print(json.dumps({k: metadata[k] for k in ('threshold','validation','test','onnx_c_max_error','splits')}, indent=2))
+    print(json.dumps({k: metadata[k] for k in ('split_mode','threshold','validation','test','onnx_c_max_error','splits')}, indent=2))
     return metadata
 
 
@@ -150,6 +172,8 @@ if __name__ == '__main__':
     p.add_argument('--data', type=Path, default=ROOT/'data/recordings')
     p.add_argument('--output', type=Path, default=ROOT/'models')
     p.add_argument('--header', type=Path, default=ROOT/'firmware/main/model_weights.h')
+    p.add_argument('--split-mode', choices=('sessions', 'recordings'), default='sessions',
+                   help='sessions: avaliação entre sessões; recordings: versão experimental por arquivos inteiros')
     a = p.parse_args()
-    try: train(a.data, a.output, a.header)
+    try: train(a.data, a.output, a.header, split_mode=a.split_mode)
     except (ValueError, RuntimeError) as e: p.exit(1, str(e)+'\n')

@@ -10,4 +10,6 @@ O **Gemma no LM Studio** cuida da conversa e fica no diretório de modelos do LM
 
 Não há um modelo Ferris pré-treinado neste repositório inicial: ele depende das gravações reais. Não use os modelos sintéticos criados pelos testes como detector de fala. A coleta com uma única pessoa também não caracteriza autenticação de identidade.
 
+`--split-mode recordings` permite um primeiro modelo experimental a partir de uma única sessão. Confira `split_mode` e `limitations` em `wake.json`: métricas desse modo usam arquivos reservados, mas não avaliam novos ambientes ou dias. `split_recordings` registra os hashes dos arquivos de cada conjunto; as métricas são por janela de áudio, não por acionamento contínuo.
+
 As versões geradas são ignoradas por padrão. Após avaliar um modelo real, selecione explicitamente os artefatos para a entrega/release; revise os caminhos e metadados locais de `wake.json` antes de publicar. Guarde treino, validação e teste separados por sessão de gravação.
