@@ -18,4 +18,4 @@ As versões geradas são ignoradas por padrão. Após avaliar um modelo real, se
 
 A coleta padrão do painel usa agora o **INMP441 do ESP32 por USB**. Escolha uma nova sessão, como `esp-sala-01`, grave exemplos das três classes e aguarde a transferência após cada clipe de 2 segundos. As gravações anteriores do PC continuam disponíveis; os novos arquivos USB têm prefixo `esp32-`. A detecção embarcada deve ser avaliada com novas gravações do mesmo microfone, em diferentes condições.
 
-Whisper e a voz masculina pt-BR Alex (Kokoro ONNX) ficam em `data/whisper` e `data/tts`, no PC de destino. Nenhum desses modelos vai para o ESP32. Use **Testar voz** no painel para comparar o estilo suave com o original.
+Whisper e as cinco vozes masculinas em português do Supertonic 3 ONNX ficam em `data/whisper` e `data/tts/supertonic-3`, no PC de destino. Nenhum desses modelos vai para o ESP32. Escolha **Voz 1–5** e use **Testar voz** para comparar os timbres. O áudio mantém o tom original, sem o ajuste artificial usado anteriormente.

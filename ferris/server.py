@@ -34,7 +34,7 @@ class Server(ThreadingHTTPServer):
         self.assistant = Assistant(self.settings)
         local_whisper = self.data/'whisper'/'small'
         self.transcriber = Transcriber(whisper or (str(local_whisper) if (local_whisper/'model.bin').is_file() else ''))
-        self.speech = Speech(self.data/'tts/kokoro')
+        self.speech = Speech(self.data/'tts/supertonic-3')
         self.detector = Detector(model_dir)
         self.device = Device(serial_port, self.assistant)
         export_header = header or (Path(model_dir)/'model_weights.h' if model_dir else None)
@@ -162,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
                 hardware = self.server.assistant.hardware_state()
                 if hardware['muted']:
                     raise UserError('O botão do ESP32 está em mute.')
-                raw = self.server.speech.synthesize(data.get('text'), data.get('style','soft'))
+                raw = self.server.speech.synthesize(data.get('text'), data.get('voice', 'M1'))
                 after = self.server.assistant.hardware_state()
                 if after['muted'] or after['revision'] != hardware['revision']:
                     raise UserError('Voz descartada: o botão de mute foi acionado.')

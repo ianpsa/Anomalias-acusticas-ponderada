@@ -73,6 +73,7 @@ s.serve_forever()
   }
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await call('Page.navigate',{url:app}); await until('document.readyState === "complete"');
+  assert.equal(await evaluate('document.getElementById("voice-choice").value'), 'M1');
   await evaluate('document.getElementById("spoken").checked=false; document.getElementById("open-settings").click()');
   await until('document.getElementById("settings").open');
   await evaluate(`document.getElementById('base-url').value=${JSON.stringify(fixture)}; document.getElementById('test-connection').click()`);
@@ -109,14 +110,15 @@ s.serve_forever()
   await evaluate('applyHardware({muted:false,revision:101});');
   assert.equal(await evaluate('enabled'),false);
   const voiceCancelled = await evaluate(`(async () => {
-    const originalFetch = window.fetch; let signal, release;
-    window.fetch = (url, options) => url === '/api/speech' ? new Promise(resolve => { signal = options.signal; release = resolve; }) : originalFetch(url, options);
+    const originalFetch = window.fetch; let signal, release, requestedVoice;
+    $('voice-choice').value = 'M3'; $('voice-choice').dispatchEvent(new Event('change'));
+    window.fetch = (url, options) => url === '/api/speech' ? new Promise(resolve => { signal = options.signal; requestedVoice = JSON.parse(options.body).voice; release = resolve; }) : originalFetch(url, options);
     try {
       const completion = speak('Teste de voz', false, true);
       applyHardware({muted:true,revision:102});
       release(new Response(new Blob([new Uint8Array(44)], {type:'audio/wav'})));
       await completion; await new Promise(resolve => setTimeout(resolve, 20));
-      return signal.aborted && currentSpeech === null && !speaking;
+      return signal.aborted && currentSpeech === null && !speaking && requestedVoice === 'M3';
     } finally { window.fetch = originalFetch; applyHardware({muted:false,revision:103}); }
   })()`);
   assert.equal(voiceCancelled,true);
@@ -146,6 +148,7 @@ for label,hz in [('ferris',900),('other',2400),('noise',3000)]:
   const trainingShot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   await writeFile(path.join(temporary,'training-desktop.png'),Buffer.from(trainingShot.data,'base64'));
   await call('Page.reload'); await until('document.readyState === "complete"');
+  assert.equal(await evaluate('document.getElementById("voice-choice").value'), 'M3');
   await until('document.getElementById("model-state").textContent.includes("Detector ativo")');
   await evaluate('document.getElementById("voice-mode").value="local"; document.getElementById("listen").click()');
   await until('document.getElementById("notice").textContent.includes("detector ONNX treinado")');

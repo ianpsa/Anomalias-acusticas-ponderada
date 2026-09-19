@@ -156,9 +156,9 @@ python -m ferris.server
 
 O servidor encontra automaticamente `data/whisper/small`. Para outro modelo local CTranslate2, exporte `FERRIS_WHISPER_MODEL=/caminho/do/modelo`. O download precisa ser feito apenas uma vez.
 
-Selecione **ESP32 + Whisper neste PC** e clique em **Ativar microfone**. Diga “Ferris” perto do INMP441 e, após a saudação, faça a pergunta no microfone do PC. A detecção da placa exige duas janelas positivas consecutivas. A captura da pergunta termina com aproximadamente 850 ms de silêncio ou no limite de 12 segundos. O limiar inicial de voz é fixo e precisa ser ajustado se o ambiente ou microfone exigir. A resposta falada usa **Kokoro ONNX**, voz masculina brasileira **Alex**, no PC de destino. O estilo padrão **Masculina suave · fofa** eleva sutilmente o tom; **Masculina original** permite comparar. Use **Testar voz** no painel para ouvir e liberar a reprodução no navegador. Os arquivos ficam em `data/tts/kokoro` (cerca de 354 MB), baixados uma vez com SHA-256 verificado; a síntese não usa um serviço online. Em **Testar detector e Whisper no PC**, a mesma sequência pode ser avaliada usando apenas o microfone do PC.
+Selecione **ESP32 + Whisper neste PC** e clique em **Ativar microfone**. Diga “Ferris” perto do INMP441 e, após a saudação, faça a pergunta no microfone do PC. A detecção da placa exige duas janelas positivas consecutivas. A captura da pergunta termina com aproximadamente 850 ms de silêncio ou no limite de 12 segundos. O limiar inicial de voz é fixo e precisa ser ajustado se o ambiente ou microfone exigir. A resposta falada usa **Supertonic 3 ONNX**, com cinco perfis masculinos em português no PC de destino. Escolha **Voz 1** a **Voz 5** e use **Testar voz** para comparar a mesma frase; a escolha fica salva neste navegador e vale para as próximas respostas. A reprodução preserva o tom e a taxa nativa de 44,1 kHz, sem o efeito agudo anterior. A síntese usa 16 passos e velocidade normal. Os arquivos ficam em `data/tts/supertonic-3` (cerca de 400 MB), baixados uma vez com revisão e SHA-256 fixados; a síntese não usa um serviço online. Em **Testar detector e Whisper no PC**, a mesma sequência pode ser avaliada usando apenas o microfone do PC.
 
-A síntese usa o runtime [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) e as [vozes Kokoro](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). O extra fixa a versão compatível com o adaptador do export ONNX usado neste projeto.
+O modelo e os exemplos estão no [arquivo oficial Supertonic](https://github.com/supertone-oss-archive/supertonic). O projeto upstream foi arquivado; usamos o SDK `supertonic==1.3.1` e uma revisão fixa dos pesos, com download automático desabilitado durante a execução. Para atualizar uma instalação anterior, reinstale o extra `tts`, execute `python tools/setup_tts.py`, reinicie o Ferris e recarregue o painel. Os antigos arquivos Kokoro não são mais usados. A preferência de timbre e a pronúncia devem ser avaliadas ouvindo as vozes; a troca de modelo não garante que todas agradem.
 
 ## ESP32 e FreeRTOS
 
@@ -168,7 +168,7 @@ Consulte [firmware/README.md](firmware/README.md) para pinagem, configuração e
 
 O microcontrolador envia eventos ao serviço **Ferris no PC**, não diretamente ao LM Studio. USB e Wi-Fi usam o mesmo identificador de evento para evitar duas saudações quando ambos chegam ao mesmo servidor.
 
-A coleta de exemplos pelo INMP441 usa USB; o Wi-Fi transporta ativações e estado de mute. A pergunta da conversa ainda é captada pelo microfone do PC. Whisper, Gemma e Kokoro executam no PC que hospeda o Ferris.
+A coleta de exemplos pelo INMP441 usa USB; o Wi-Fi transporta ativações e estado de mute. A pergunta da conversa ainda é captada pelo microfone do PC. Whisper, Gemma e Supertonic executam no PC que hospeda o Ferris.
 
 **USB:** o servidor identifica automaticamente a ponte CP2102 em Linux. Feche outros monitores seriais antes de iniciar o Ferris. Para selecionar a porta: `python -m ferris.server --serial-port /dev/ttyUSB0`. Para usar somente Wi-Fi, passe `--serial-port ''`.
 
