@@ -5,7 +5,7 @@ let accessToken = '', enabled = false, busy = false, speaking = false, activeUnt
 let recognition, capture, recordingCapture, currentSpeech, generation = 0, eventId = 0, polled = false;
 let detectBusy = false, hits = 0, lastDetect = 0, commandSamples = [], silenceSince = 0, speechStarted = false;
 let hardwareMuted = false, hardwareRevision = null, collecting = false, espRecording = null;
-let trainingChoice = false, trainingPolling = false;
+let trainingChoice = false, trainingPolling = false, wakeAfter = Date.now();
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -41,10 +41,16 @@ function addMessage(text, who = 'assistant', sources = [], error = false) {
   }
   $('messages').append(box); $('messages').scrollTop = $('messages').scrollHeight;
 }
-function speak(text, resume = true, preview = false) {
+function closeQuestion() {
+  activeUntil = 0; resetCommand(); processLocal.ring = []; hits = 0;
+  wakeAfter = Date.now();
+}
+function speak(text, listenAfterGreeting = false, preview = false) {
   if (hardwareMuted) return Promise.resolve();
   if (!$('spoken').checked && !preview) {
-    activeUntil = resume ? Date.now() + 20000 : 0; idleState(); return Promise.resolve();
+    closeQuestion();
+    if (listenAfterGreeting && enabled) activeUntil = Date.now() + 20000;
+    idleState(); return Promise.resolve();
   }
   return new Promise((resolve) => {
     cancelSpeech();
@@ -57,7 +63,10 @@ function speak(text, resume = true, preview = false) {
       if (speech.audio) { speech.audio.onended = null; speech.audio.onerror = null; speech.audio.pause(); speech.audio.removeAttribute('src'); speech.audio.load(); }
       if (speech.url) URL.revokeObjectURL(speech.url);
       if (currentSpeech === speech) {
-        currentSpeech = null; speaking = false; activeUntil = !cancelled && resume ? Date.now() + 20000 : 0;
+        currentSpeech = null; speaking = false; closeQuestion();
+        // Ignore delayed device detections caused by Ferris's own playback.
+        wakeAfter = Date.now() + 750;
+        if (!cancelled && listenAfterGreeting && enabled) activeUntil = Date.now() + 20000;
         $('creature').classList.remove('active'); resetCommand(); idleState();
         if (!cancelled) startRecognition();
       }
@@ -91,6 +100,7 @@ function cancelSpeech() {
 }
 async function ask(text, search = false) {
   if (busy || !text.trim()) return;
+  closeQuestion();
   const turn = generation; busy = true; recognition?.abort(); $('send').disabled = true;
   addMessage(text, 'user'); state(search ? 'Pesquisando…' : 'Pensando…');
   const controller = new AbortController(); ask.controller = controller;
@@ -99,7 +109,7 @@ async function ask(text, search = false) {
     if (turn !== generation) return;
     addMessage(result.text, 'assistant', result.sources); $('latency').textContent = `Resposta em ${(result.latency_ms / 1000).toFixed(1)} s`;
     // Allow speech completion to restart recognition after this request.
-    busy = false; await speak(result.text, !result.end);
+    busy = false; await speak(result.text);
   } catch (error) {
     if (error.name !== 'AbortError' && turn === generation) { addMessage(error.message, 'assistant', [], true); notice(error.message); }
   } finally {
@@ -107,12 +117,12 @@ async function ask(text, search = false) {
   }
 }
 async function wake(event) {
-  if (hardwareMuted || collecting || busy || speaking) return;
+  if (hardwareMuted || collecting || busy || speaking || Date.now() < activeUntil) return;
   const turn = generation; busy = true;
   try {
     const result = event || await api('/api/wake', {device: 'desktop'});
     if (turn !== generation) return;
-    eventId = Math.max(eventId, result.id); hits = 0; addMessage(result.text); busy = false; await speak(result.text);
+    eventId = Math.max(eventId, result.id); hits = 0; addMessage(result.text); busy = false; await speak(result.text, true);
   } catch (e) { notice(e.message); }
   finally { if (turn === generation) { busy = false; idleState(); } }
 }
@@ -126,10 +136,11 @@ function setupRecognition() {
     if (busy || speaking || !enabled) return;
     const text = event.results[event.resultIndex][0].transcript.trim();
     if (Date.now() < activeUntil) { ask(text); return; }
+    if (Date.now() < wakeAfter) return;
     const match = /\b(ferris|feris|ferrys)\b/i.exec(norm(text));
     if (match) {
       const question = text.slice(match.index + match[0].length).replace(/^[\s,.!?]+/, '');
-      if (question) { activeUntil = Date.now() + 20000; ask(question); } else wake();
+      if (question) ask(question); else wake();
     }
   };
   recognition.onend = () => { if (enabled) setTimeout(startRecognition, 400); };
@@ -189,20 +200,20 @@ async function processLocal(chunk) {
     commandSamples.push(...chunk);
     if (!speechStarted && commandSamples.length > 8000) commandSamples.splice(0, commandSamples.length - 8000);
     if (speechStarted && (Date.now() - silenceSince > 850 || commandSamples.length >= 16000 * 12)) {
-      const raw = wav(commandSamples); resetCommand(); busy = true; state('Entendendo sua voz…');
+      const raw = wav(commandSamples); closeQuestion(); busy = true; state('Entendendo sua voz…');
       const turn = generation;
       try {
         const result = await api('/api/transcribe', {audio: b64(raw)});
         if (turn !== generation) return;
         busy = false;
-        if (result.text) await ask(result.text); else { activeUntil = Date.now() + 10000; idleState(); }
+        if (result.text) await ask(result.text); else { notice('Não entendi. Diga “Ferris” para tentar novamente.'); idleState(); }
       } catch (e) { if (turn === generation) notice(e.message); }
       finally { if (turn === generation) { busy = false; idleState(); } }
     }
     return;
   }
   resetCommand(); idleState();
-  if ($('voice-mode').value === 'esp') return;
+  if ($('voice-mode').value === 'esp' || Date.now() < wakeAfter) return;
   processLocal.ring = (processLocal.ring || []).concat(Array.from(chunk)).slice(-16000);
   if (processLocal.ring.length < 16000 || detectBusy || Date.now() - lastDetect < 250) return;
   detectBusy = true; lastDetect = Date.now(); const turn = generation;
@@ -236,7 +247,7 @@ async function toggleListen() {
   finally { $('listen').disabled = hardwareMuted; }
 }
 function stopListening() {
-  enabled = false; recognition?.abort(); capture?.stop(); capture = null; activeUntil = 0;
+  enabled = false; recognition?.abort(); capture?.stop(); capture = null; closeQuestion();
   resetCommand(); processLocal.ring = []; hits = 0; $('listen').textContent = 'Ativar microfone'; $('mic-dot').classList.remove('on'); idleState();
 }
 async function stopAll() {
@@ -353,7 +364,7 @@ $('test-connection').onclick = async () => {
 $('listen').onclick = toggleListen; $('wake').onclick = () => wake(); $('stop').onclick = stopAll;
 $('voice-mode').onchange = () => {
   stopListening();
-  $('voice-note').textContent = {esp: 'O ESP32 detecta “Ferris”. O microfone deste PC capta a pergunta; Whisper transcreve e Gemma responde aqui.', local: 'Teste do detector ONNX e transcrição Whisper neste PC. Nenhum áudio vai ao LM Studio.', browser: 'No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.'}[$('voice-mode').value];
+  $('voice-note').textContent = {esp: 'Diga “Ferris” antes de cada pergunta. A placa detecta o nome; este PC transcreve e responde.', local: 'Teste do detector ONNX e transcrição Whisper neste PC. Nenhum áudio vai ao LM Studio.', browser: 'No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.'}[$('voice-mode').value];
 };
 $('chat-form').onsubmit = (e) => { e.preventDefault(); if (busy) return; const text = $('message').value.trim(); if (text) { $('message').value = ''; ask(text, $('search').checked); } };
 $('message').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } };
@@ -422,7 +433,7 @@ setInterval(async () => {
     if (!polled || hardwareChanged || hardwareMuted || collecting || !enabled) { eventId = data.latest; polled = true; return; }
     for (const event of data.events) {
       eventId = Math.max(eventId, event.id);
-      if (event.device !== 'desktop' && Date.now()/1000 - event.timestamp < 10 && !busy && !speaking) void wake(event);
+      if (event.device !== 'desktop' && event.timestamp * 1000 > wakeAfter && Date.now()/1000 - event.timestamp < 10 && Date.now() >= activeUntil && !busy && !speaking) void wake(event);
     }
   } catch (_) { /* Connection errors are presented by user actions. */ }
   finally { pollBusy = false; }

@@ -87,6 +87,38 @@ s.serve_forever()
   await evaluate('document.getElementById("message").value="Pesquise café"; document.getElementById("chat-form").requestSubmit()');
   await until('document.querySelector(".sources a") !== null');
   assert.match(await evaluate('document.querySelector(".sources a").href'),/^https:\/\/www.google.com\/search/);
+  // Every wake grants one question, with or without spoken responses.
+  const oneQuestionPerWake = await evaluate(`(async () => {
+    const originalApi = api, originalFetch = window.fetch, OriginalAudio = window.Audio;
+    let transcriptions = 0, fail = false;
+    api = async (path, ...args) => {
+      if (path === '/api/transcribe') { transcriptions++; if (fail) throw Error('STT failure'); return {text:'Como está o dia?'}; }
+      return originalApi(path, ...args);
+    };
+    window.fetch = (url, options) => url === '/api/speech' ? Promise.resolve(new Response(new Blob(['test'], {type:'audio/wav'}))) : originalFetch(url, options);
+    window.Audio = class { play() { queueMicrotask(() => this.onended?.()); return Promise.resolve(); } pause() {} removeAttribute() {} load() {} };
+    const speakQuestion = async () => { await processLocal(new Float32Array(800).fill(.1)); silenceSince = Date.now() - 1000; await processLocal(new Float32Array(800)); };
+    try {
+      $('voice-mode').value = 'esp'; enabled = true; hardwareMuted = false; closeQuestion();
+      for (const spoken of [false, true]) {
+        $('spoken').checked = spoken;
+        await wake({id:eventId + 1, text:'Olá! Pode perguntar.'});
+        if (activeUntil <= Date.now()) return false;
+        const before = transcriptions;
+        await speakQuestion();
+        if (transcriptions !== before + 1 || activeUntil !== 0) return false;
+        await speakQuestion();
+        if (transcriptions !== before + 1) return false;
+      }
+      await wake({id:eventId + 1, text:'Olá!'}); fail = true;
+      await speakQuestion();
+      return activeUntil === 0;
+    } finally {
+      api = originalApi; window.fetch = originalFetch; window.Audio = OriginalAudio;
+      enabled = false; closeQuestion(); $('spoken').checked = false;
+    }
+  })()`);
+  assert.equal(oneQuestionPerWake, true);
   await evaluate('document.getElementById("tab-voice").click()');
   assert.equal(await evaluate('document.getElementById("voice-pane").hidden'),false);
   await evaluate('document.getElementById("record-source").value="pc"; document.getElementById("label").value="noise"; document.getElementById("record").click()');
