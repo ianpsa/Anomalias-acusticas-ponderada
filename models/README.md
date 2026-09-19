@@ -15,3 +15,7 @@ Não há um modelo Ferris pré-treinado neste repositório inicial: ele depende 
 `--split-mode recordings` permite um primeiro modelo experimental a partir de uma única sessão. Confira `split_mode` e `limitations` em `wake.json`: métricas desse modo usam arquivos reservados, mas não avaliam novos ambientes ou dias. `split_recordings` registra os hashes dos arquivos de cada conjunto; as métricas são por janela de áudio, não por acionamento contínuo.
 
 As versões geradas são ignoradas por padrão. Após avaliar um modelo real, selecione explicitamente os artefatos para a entrega/release; revise os caminhos e metadados locais de `wake.json` antes de publicar. Guarde treino, validação e teste separados por sessão de gravação.
+
+A coleta padrão do painel usa agora o **INMP441 do ESP32 por USB**. Escolha uma nova sessão, como `esp-sala-01`, grave exemplos das três classes e aguarde a transferência após cada clipe de 2 segundos. As gravações anteriores do PC continuam disponíveis; os novos arquivos USB têm prefixo `esp32-`. A detecção embarcada deve ser avaliada com novas gravações do mesmo microfone, em diferentes condições.
+
+Whisper e a voz masculina pt-BR Alex (Kokoro ONNX) ficam em `data/whisper` e `data/tts`, no PC de destino. Nenhum desses modelos vai para o ESP32. Use **Testar voz** no painel para comparar o estilo suave com o original.

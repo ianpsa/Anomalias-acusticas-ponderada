@@ -2,8 +2,9 @@
 const $ = (id) => document.getElementById(id);
 let session = crypto.randomUUID();
 let accessToken = '', enabled = false, busy = false, speaking = false, activeUntil = 0;
-let recognition, capture, recordingCapture, currentUtterance, generation = 0, eventId = 0, polled = false;
+let recognition, capture, recordingCapture, currentSpeech, generation = 0, eventId = 0, polled = false;
 let detectBusy = false, hits = 0, lastDetect = 0, commandSamples = [], silenceSince = 0, speechStarted = false;
+let hardwareMuted = false, hardwareRevision = null, collecting = false, espRecording = null;
 let trainingChoice = false, trainingPolling = false;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -40,33 +41,53 @@ function addMessage(text, who = 'assistant', sources = [], error = false) {
   }
   $('messages').append(box); $('messages').scrollTop = $('messages').scrollHeight;
 }
-function speak(text, resume = true) {
-  if (!$('spoken').checked || !window.speechSynthesis) {
+function speak(text, resume = true, preview = false) {
+  if (hardwareMuted) return Promise.resolve();
+  if (!$('spoken').checked && !preview) {
     activeUntil = resume ? Date.now() + 20000 : 0; idleState(); return Promise.resolve();
   }
   return new Promise((resolve) => {
-    speaking = true; recognition?.abort(); state('Ferris está falando…'); $('creature').classList.add('active');
-    speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text); currentUtterance = utter; utter.lang = 'pt-BR'; utter.rate = 1.05;
-    const voices = speechSynthesis.getVoices();
-    utter.voice = voices.find(v => v.lang === 'pt-BR' && v.localService) || voices.find(v => v.lang.startsWith('pt')) || null;
+    cancelSpeech();
+    speaking = true; recognition?.abort(); state('Preparando a voz…'); $('creature').classList.add('active');
+    const speech = {controller: new AbortController(), audio: null, url: null}; currentSpeech = speech;
     let done = false;
-    const finish = () => {
+    const finish = (cancelled = false) => {
       if (done) return; done = true;
-      if (currentUtterance === utter) {
-        currentUtterance = null; speaking = false; activeUntil = resume ? Date.now() + 20000 : 0;
-        $('creature').classList.remove('active'); resetCommand(); idleState(); startRecognition();
+      speech.controller.abort();
+      if (speech.audio) { speech.audio.onended = null; speech.audio.onerror = null; speech.audio.pause(); speech.audio.removeAttribute('src'); speech.audio.load(); }
+      if (speech.url) URL.revokeObjectURL(speech.url);
+      if (currentSpeech === speech) {
+        currentSpeech = null; speaking = false; activeUntil = !cancelled && resume ? Date.now() + 20000 : 0;
+        $('creature').classList.remove('active'); resetCommand(); idleState();
+        if (!cancelled) startRecognition();
       }
       resolve();
     };
-    utter.onend = finish; utter.onerror = finish;
-    utter._finish = finish;
-    speechSynthesis.speak(utter);
+    speech.finish = finish;
+    (async () => {
+      try {
+        const response = await fetch('/api/speech', {method:'POST', signal:speech.controller.signal,
+          headers:{'Content-Type':'application/json', ...(accessToken ? {Authorization:'Bearer '+accessToken} : {})},
+          body:JSON.stringify({text, style:$('voice-style').value})});
+        if (!response.ok) { const error = await response.json(); throw new Error(error.error || 'Não foi possível gerar a voz.'); }
+        const blob = await response.blob();
+        if (currentSpeech !== speech || done) return;
+        speech.url = URL.createObjectURL(blob); speech.audio = new Audio(speech.url);
+        speech.audio.onended = () => finish();
+        speech.audio.onerror = () => { notice('Não foi possível reproduzir a voz.'); finish(); };
+        state('Ferris está falando…');
+        await speech.audio.play();
+      } catch (error) {
+        if (done) return;
+        if (error.name !== 'AbortError') notice(error.name === 'NotAllowedError' ? 'Clique em Testar voz para liberar a reprodução no navegador.' : error.message);
+        finish();
+      }
+    })();
   });
 }
 function cancelSpeech() {
-  const utter = currentUtterance; currentUtterance = null; speaking = false;
-  window.speechSynthesis?.cancel(); utter?._finish(); $('creature').classList.remove('active');
+  currentSpeech?.finish(true);
+  speaking = false; $('creature').classList.remove('active');
 }
 async function ask(text, search = false) {
   if (busy || !text.trim()) return;
@@ -86,7 +107,7 @@ async function ask(text, search = false) {
   }
 }
 async function wake(event) {
-  if (busy || speaking) return;
+  if (hardwareMuted || collecting || busy || speaking) return;
   const turn = generation; busy = true;
   try {
     const result = event || await api('/api/wake', {device: 'desktop'});
@@ -194,6 +215,7 @@ async function processLocal(chunk) {
   finally { detectBusy = false; }
 }
 async function toggleListen() {
+  if (hardwareMuted) return;
   if (enabled) { stopListening(); return; }
   const turn = generation; $('listen').disabled = true;
   try {
@@ -211,7 +233,7 @@ async function toggleListen() {
     }
     $('listen').textContent = 'Desativar microfone'; $('mic-dot').classList.add('on'); idleState();
   } catch (e) { if (turn === generation) { stopListening(); notice(e.message); } }
-  finally { $('listen').disabled = false; }
+  finally { $('listen').disabled = hardwareMuted; }
 }
 function stopListening() {
   enabled = false; recognition?.abort(); capture?.stop(); capture = null; activeUntil = 0;
@@ -220,16 +242,32 @@ function stopListening() {
 async function stopAll() {
   generation++; ask.controller?.abort(); cancelSpeech(); stopListening(); busy = false; $('send').disabled = false;
   recordingCapture?.stop(); recordingCapture = null;
+  if (espRecording) { espRecording.abort(); espRecording = null; await api('/api/device/record/cancel', {}).catch(() => {}); }
   const previous = session; session = crypto.randomUUID();
   try { await api('/api/reset', {session: previous}); } catch (_) {}
 }
+function applyHardware(hardware) {
+  if (!hardware) return;
+  const changed = hardwareRevision !== null && hardwareRevision !== hardware.revision;
+  const newlyMuted = hardware.muted && !hardwareMuted;
+  hardwareMuted = hardware.muted; hardwareRevision = hardware.revision;
+  if (changed || newlyMuted) {
+    stopAll();
+    notice(hardwareMuted ? 'Mute físico ativado. Microfones e voz interrompidos.' : 'ESP32 desmutado. Ative o microfone para retomar a conversa.');
+  }
+  for (const id of ['listen', 'record', 'wake', 'test-voice']) $(id).disabled = hardwareMuted || (collecting && ['listen', 'record'].includes(id));
+  if (hardwareMuted) state('Microfone bloqueado pelo botão do ESP32.');
+  return changed || newlyMuted;
+}
 async function refresh() {
   const info = await api('/api/status');
+  applyHardware(info.hardware);
   for (const key of ['ferris', 'other', 'noise']) $('count-' + key).textContent = info.recordings[key];
   $('model-state').textContent = info.wake_model ? 'Detector ONNX disponível. Valide com áudios de uma nova sessão.' : 'Modelo pessoal ainda não treinado. Comece reunindo seus exemplos.';
   if (!trainingChoice) $('training-mode').value = info.recording_sessions >= 4 ? 'sessions' : 'recordings';
   renderTraining(info.training);
   $('whisper-state').textContent = info.local_voice ? 'Whisper local configurado: suas perguntas são transcritas neste PC.' : 'Whisper ainda não configurado neste PC.';
+  $('speech-voice').textContent = info.speech?.ready ? `Voz ${info.speech.voice} · Português brasileiro · Local` : 'Voz brasileira ainda não configurada';
   $('device-state').textContent = info.device?.connected ? 'ESP32 conectado por USB. Eventos por Wi-Fi também são aceitos quando configurados.' : 'USB não conectado. O modo Wi-Fi continua disponível quando configurado.';
   $('flash-esp32').disabled = !info.device?.available || info.training?.state === 'running';
   return info;
@@ -260,6 +298,12 @@ async function pollTraining() {
   } finally { trainingPolling = false; }
 }
 $('training-mode').onchange = () => { trainingChoice = true; };
+$('test-voice').onclick = async () => {
+  await stopAll(); $('test-voice').disabled = true;
+  try { await speak('Olá! Eu sou o Ferris. Que bom ter você por aqui. Qual é a vibe de hoje?', false, true); }
+  finally { $('test-voice').disabled = hardwareMuted; }
+};
+$('spoken').onchange = () => { if (!$('spoken').checked) { cancelSpeech(); startRecognition(); } };
 $('train-model').onclick = async () => {
   $('train-model').disabled = true;
   try {
@@ -313,12 +357,26 @@ for (const tab of ['chat', 'voice']) $('tab-' + tab).onclick = () => {
 async function saveRecording(buffer, label, group) {
   await api('/api/recordings', {audio: b64(buffer), label, group}); await refresh();
 }
+$('record-source').onchange = () => {
+  if (/^(ian|esp)-sala-01$/.test($('group').value)) $('group').value = $('record-source').value === 'esp' ? 'esp-sala-01' : 'ian-sala-01';
+  $('record-input').textContent = $('record-source').value === 'esp' ? 'Microfone do ESP32 conectado por USB.' : 'Microfone selecionado no navegador.';
+};
 $('record').onclick = async () => {
+  if (hardwareMuted || collecting) return;
   if (!$('group').checkValidity()) { $('group').reportValidity(); return; }
   const label = $('label').value, group = $('group').value, recording = new Capture(), samples = [];
-  await stopAll(); const turn = generation; recordingCapture = recording; $('record').disabled = true; $('listen').disabled = true;
+  await stopAll(); if (hardwareMuted) return; collecting = true; const turn = generation; recordingCapture = recording; $('record').disabled = true; $('listen').disabled = true;
   $('record-level').value = -60; $('record-level-text').textContent = 'Aguardando áudio…';
   try {
+    if ($('record-source').value === 'esp') {
+      const controller = new AbortController(); espRecording = controller;
+      $('record-input').textContent = 'Microfone: ESP32 · INMP441 · USB';
+      $('record-state').textContent = 'Gravando 2 segundos no ESP32… diga agora. Aguarde a transferência USB (até 15 segundos).';
+      $('record-level-text').textContent = 'Coleta pelo ESP32; o nível ao vivo está disponível apenas no modo PC.';
+      await api('/api/recordings/esp', {label, group}, controller.signal);
+      if (turn === generation) { $('record-state').textContent = 'Exemplo do ESP32 salvo. Pode gravar o próximo.'; await refresh(); }
+      return;
+    }
     await recording.start(chunk => {
       samples.push(...chunk);
       const rms = Math.sqrt(chunk.reduce((sum, x) => sum + x*x, 0) / chunk.length);
@@ -331,8 +389,8 @@ $('record').onclick = async () => {
     await new Promise(resolve => setTimeout(resolve, 2000)); recording.stop();
     if (turn !== generation) { $('record-state').textContent = 'Gravação cancelada.'; return; }
     await saveRecording(wav(samples), label, group); $('record-state').textContent = 'Exemplo salvo. Pode gravar o próximo.';
-  } catch (e) { $('record-state').textContent = e.message; }
-  finally { recording.stop(); if (recordingCapture === recording) recordingCapture = null; $('record').disabled = false; $('listen').disabled = false; }
+  } catch (e) { $('record-state').textContent = e.name === 'AbortError' ? 'Gravação cancelada.' : e.message; }
+  finally { collecting = false; espRecording = null; recording.stop(); if (recordingCapture === recording) recordingCapture = null; $('record').disabled = hardwareMuted; $('listen').disabled = hardwareMuted; }
 };
 $('upload').onchange = async () => {
   $('upload').disabled = true;
@@ -352,12 +410,13 @@ setInterval(async () => {
   if (pollBusy) return; pollBusy = true;
   try {
     const data = await api(`/api/events?since=${eventId}`);
-    if (!polled) { eventId = data.latest; polled = true; return; }
+    const hardwareChanged = applyHardware(data.hardware);
+    if (!polled || hardwareChanged || hardwareMuted || collecting || !enabled) { eventId = data.latest; polled = true; return; }
     for (const event of data.events) {
       eventId = Math.max(eventId, event.id);
-      if (event.device !== 'desktop' && Date.now()/1000 - event.timestamp < 10 && !busy && !speaking) await wake(event);
+      if (event.device !== 'desktop' && Date.now()/1000 - event.timestamp < 10 && !busy && !speaking) void wake(event);
     }
   } catch (_) { /* Connection errors are presented by user actions. */ }
   finally { pollBusy = false; }
-}, 1500);
-window.addEventListener('pagehide', () => { stopListening(); cancelSpeech(); });
+}, 500);
+window.addEventListener('pagehide', () => { stopListening(); cancelSpeech(); recordingCapture?.stop(); espRecording?.abort(); });

@@ -74,8 +74,11 @@ static bool accepts_generation(uint32_t generation) {
     return ferris_listen_accepts(&state, generation);
 }
 
+#include "recording.h"
+
 static void controls_task(void *arg) {
     (void)arg;
+    int64_t last_state = 0;
     ferris_button_t button;
     ferris_button_init(&button, gpio_get_level(CONFIG_FERRIS_MUTE_BUTTON) == 0, esp_timer_get_time());
     while (1) {
@@ -84,10 +87,14 @@ static void controls_task(void *arg) {
             portENTER_CRITICAL(&stats_mux);
             ferris_listen_toggle(&listen_state);
             bool muted = listen_state.muted;
+            last_state = 0;
             portEXIT_CRITICAL(&stats_mux);
             ESP_LOGI(TAG, "{\"muted\":%s}", muted ? "true" : "false");
         }
         ferris_listen_state_t state = listening_snapshot();
+        if (!last_state || now - last_state >= 500000) {
+            char body[256]; state_body(body, sizeof(body)); printf("FERRIS_STATE %s\n", body); last_state = now;
+        }
         bool active = !state.muted && state.ready;
         gpio_set_level(CONFIG_FERRIS_LED_RED, !active);
         // A short dark pulse on green signals a detected keyword; red means inactive.
@@ -135,6 +142,7 @@ static void capture_task(void *arg) {
         chunk.completed_us = esp_timer_get_time(); chunk.capture_us = chunk.completed_us - begin;
         // INMP441 24-bit signed samples are MSB-aligned in a 32-bit I2S slot.
         for (int i = 0; i < CHUNK; i++) chunk.pcm[i] = (int16_t)(raw[i] >> 16);
+        if (collection_active()) { collect_chunk(chunk.pcm, generation); continue; }
         // Never wait on downstream computation or network. Drop newest if full.
         if (xRingbufferSend(audio_ring, &chunk, sizeof(chunk), 0) != pdTRUE) increment(&dropped_audio);
     }
@@ -181,7 +189,7 @@ static void detect_task(void *arg) {
     int64_t cooldown = 0, last_log = 0;
     while (1) {
         if (xQueueReceive(feature_queue, &item, pdMS_TO_TICKS(50)) != pdTRUE) continue;
-        if (!accepts_generation(item.generation)) { hits = previous = 0; cooldown = 0; continue; }
+        if (collection_active() || !accepts_generation(item.generation)) { hits = previous = 0; cooldown = 0; continue; }
         if (generation != item.generation) { hits = previous = 0; cooldown = 0; }
         generation = item.generation;
         int64_t start = esp_timer_get_time();
@@ -223,18 +231,25 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 static void network_task(void *arg) {
     (void)arg;
     wake_item_t item;
-    const uint32_t boot_id = esp_random();
+    uint32_t last_generation = UINT32_MAX;
+    int64_t last_state = 0;
     uint32_t event_sequence = 0;
     char authorization[256], body[512];
     int length=snprintf(authorization,sizeof(authorization),"Bearer %s",CONFIG_FERRIS_DEVICE_TOKEN);
     bool configured = strlen(CONFIG_FERRIS_DEVICE_TOKEN)>0 && length>0 && length<(int)sizeof(authorization);
     while (1) {
-        if (xQueueReceive(wake_queue,&item,portMAX_DELAY) != pdTRUE) continue;
-        if (!accepts_generation(item.generation)) continue;
+        ferris_listen_state_t state = listening_snapshot();
+        bool report_state = state.generation != last_generation || esp_timer_get_time() - last_state > 5000000;
+        if (report_state) {
+            state_body(body, sizeof(body)); last_generation = state.generation; last_state = esp_timer_get_time();
+        } else {
+        if (xQueueReceive(wake_queue,&item,pdMS_TO_TICKS(100)) != pdTRUE) continue;
+        if (collection_active() || !accepts_generation(item.generation)) continue;
         snprintf(body,sizeof(body),"{\"device\":\"esp32-ferris\",\"event_id\":\"%08"PRIx32"-%"PRIu32"\",\"confidence\":%.6f,\"metrics\":{\"capture_us\":%"PRId64",\"features_us\":%"PRId64",\"inference_us\":%"PRId64",\"decision_us\":%"PRId64"}}",
                  boot_id,++event_sequence,item.confidence,item.capture_us,item.features_us,item.inference_us,item.decision_us);
         // USB and Wi-Fi carry the same ID so the bridge can deduplicate them.
         printf("FERRIS_WAKE %s\n", body);
+        }
         if (!configured || !(xEventGroupGetBits(network)&WIFI_READY)) { increment(&dropped_network); continue; }
         esp_http_client_config_t config={.url=CONFIG_FERRIS_BRIDGE_URL,.timeout_ms=2000,.disable_auto_redirect=true};
         esp_http_client_handle_t client=esp_http_client_init(&config);
@@ -243,7 +258,7 @@ static void network_task(void *arg) {
         esp_http_client_set_header(client,"Content-Type","application/json");
         esp_http_client_set_header(client,"Authorization",authorization);
         esp_http_client_set_post_field(client,body,strlen(body));
-        if (!accepts_generation(item.generation)) { esp_http_client_cleanup(client); continue; }
+        if (!report_state && !accepts_generation(item.generation)) { esp_http_client_cleanup(client); continue; }
         esp_err_t result=esp_http_client_perform(client);
         int status=esp_http_client_get_status_code(client);
         if (result!=ESP_OK || status<200 || status>=300) increment(&dropped_network);
@@ -271,6 +286,7 @@ void app_main(void) {
              CONFIG_FERRIS_DIN, CONFIG_FERRIS_BCLK, CONFIG_FERRIS_WS,
              CONFIG_FERRIS_LED_RED, CONFIG_FERRIS_LED_GREEN, CONFIG_FERRIS_MUTE_BUTTON);
     ferris_listen_init(&listen_state);
+    boot_id = esp_random(); record_mutex = xSemaphoreCreateMutex(); configASSERT(record_mutex);
     gpio_config_t led={.pin_bit_mask=(1ULL<<CONFIG_FERRIS_LED_RED)|(1ULL<<CONFIG_FERRIS_LED_GREEN),.mode=GPIO_MODE_OUTPUT};
     ESP_ERROR_CHECK(gpio_config(&led));
     ESP_ERROR_CHECK(gpio_set_level(CONFIG_FERRIS_LED_RED, 1));
@@ -301,5 +317,6 @@ void app_main(void) {
     configASSERT(xTaskCreate(controls_task,"controls",3072,NULL,4,NULL)==pdPASS);
     configASSERT(xTaskCreate(feature_task,"features",12288,NULL,3,NULL)==pdPASS);
     configASSERT(xTaskCreate(detect_task,"detect",4096,NULL,2,NULL)==pdPASS);
+    configASSERT(xTaskCreate(recording_task,"recording",4096,NULL,1,NULL)==pdPASS);
     configASSERT(xTaskCreate(network_task,"network",6144,NULL,1,NULL)==pdPASS);
 }

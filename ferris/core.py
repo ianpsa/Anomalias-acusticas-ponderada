@@ -133,6 +133,8 @@ class Assistant:
         self.events = deque(maxlen=100)
         self.event_id = 0
         self.device_events = OrderedDict()
+        self.hardware = {'muted': False, 'revision': 0}
+        self.retired_boots = deque(maxlen=16)
 
     def models(self):
         s = self.settings.get()
@@ -148,6 +150,8 @@ class Assistant:
 
     def wake(self, device, confidence=None, metrics=None, device_event_id=None):
         with self.lock:
+            if self.hardware['muted']:
+                raise UserError('O botão do ESP32 está em mute.')
             key = (device, device_event_id)
             if device_event_id and key in self.device_events:
                 return self.device_events[key]
@@ -160,6 +164,28 @@ class Assistant:
                 while len(self.device_events) > 128:
                     self.device_events.popitem(last=False)
             return event
+
+    def hardware_state(self):
+        with self.lock:
+            return self.hardware.copy()
+
+    def update_hardware(self, data):
+        if (data.get('device') != 'esp32-ferris' or type(data.get('muted')) is not bool
+                or type(data.get('capture_active')) is not bool
+                or not isinstance(data.get('boot_id'),str) or not re.fullmatch(r'[a-fA-F0-9]{8}',data['boot_id'])
+                or type(data.get('generation')) is not int or not 0<=data['generation']<=0xffffffff):
+            raise UserError('Estado do ESP32 inválido.')
+        with self.lock:
+            old = self.hardware
+            boot = data['boot_id']
+            if boot in self.retired_boots or (boot == old.get('boot_id') and data['generation'] < old.get('generation',0)):
+                return old.copy()
+            if old.get('boot_id') and old['boot_id'] != boot:
+                self.retired_boots.append(old['boot_id'])
+            changed = old.get('boot_id') != boot or old.get('generation') != data['generation']
+            self.hardware = {k:data[k] for k in ('muted','capture_active','boot_id','generation')}
+            self.hardware['revision'] = old['revision'] + int(changed)
+            return self.hardware.copy()
 
     def search(self, query):
         key = self.settings.get()['search_key']

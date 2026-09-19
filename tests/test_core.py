@@ -165,6 +165,45 @@ class HTTPTests(unittest.TestCase):
         status,duplicate=self.call('/api/device/wake',payload,{'Authorization':'Bearer device-secret'})
         self.assertEqual(status,200); self.assertEqual(json.loads(duplicate)['id'],json.loads(body)['id'])
 
+    def test_physical_mute_blocks_audio_and_discards_inflight_results(self):
+        assistant = self.server.assistant
+        old = assistant.hardware_state()
+        payload = dict(device='esp32-ferris', type='state', boot_id='abcdef12',
+                       generation=1, muted=True, capture_active=False)
+        headers = {'Authorization':'Bearer device-secret'}
+        try:
+            self.assertEqual(self.call('/api/device/wake', payload, headers)[0], 200)
+            for path in ['/api/wake', '/api/speech', '/api/transcribe', '/api/detect', '/api/recordings/esp']:
+                self.assertEqual(self.call(path, {})[0], 400)
+            self.assertTrue(json.loads(self.call('/api/events')[1])['hardware']['muted'])
+            payload.update(generation=2, muted=False, capture_active=True)
+            self.call('/api/device/wake', payload, headers)
+            def interrupted(*args):
+                assistant.update_hardware(dict(payload, generation=3, muted=True, capture_active=False))
+                assistant.update_hardware(dict(payload, generation=4))
+                return 'stale result'
+            with patch.object(self.server.transcriber, 'transcribe', side_effect=interrupted):
+                status, body = self.call('/api/transcribe', {'audio':''})
+                self.assertEqual(status, 400)
+                self.assertIn('descartada', json.loads(body)['error'])
+        finally:
+            with assistant.lock:
+                assistant.hardware = old
+                assistant.retired_boots.clear()
+
+    def test_esp_recording_saved_and_validated_without_browser_audio(self):
+        buffer = io.BytesIO()
+        with wave.open(buffer, 'wb') as wav:
+            wav.setparams((1,2,16000,0,'NONE','not compressed'))
+            wav.writeframes(b'\x01\x00'*32000)
+        with patch.object(self.server.device, 'record', return_value=buffer.getvalue()) as record:
+            self.assertEqual(self.call('/api/recordings/esp', {'label':'noise','group':'../bad'})[0],400)
+            record.assert_not_called()
+            status, body = self.call('/api/recordings/esp', {'label':'noise','group':'esp-test'})
+            self.assertEqual(status,201)
+            name = json.loads(body)['file']; self.assertTrue(name.startswith('esp32-'))
+            self.assertEqual((Path(self.temp.name)/'recordings/noise/esp-test'/name).read_bytes(),buffer.getvalue())
+
     def test_bad_input_and_traversal(self):
         status,_=self.call('/api/chat',{'text':'hi','session':'../bad'}); self.assertEqual(status,400)
         status,_=self.call('/api/device/wake',{'confidence':float('nan')},{'Authorization':'Bearer device-secret'}); self.assertEqual(status,400)

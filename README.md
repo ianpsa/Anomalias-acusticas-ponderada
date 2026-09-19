@@ -80,7 +80,7 @@ O reconhecimento/áudio do navegador exige um contexto seguro: use `localhost` n
 
 O evento do ESP32 aciona a saudação no painel aberto do PC. Nesta fase, a pergunta seguinte e a reprodução da resposta usam o áudio do PC. Não há implementação de alto-falante Bluetooth no ESP32.
 
-Na montagem ESP-32U confirmada, o microfone usa **SD 22, SCK 26 e WS 25**, o LED vermelho usa **18** e o verde **19**. O botão no **GPIO 23 para GND** alterna o mute do ESP32: vermelho indica captura inativa e verde indica escuta. O firmware descarta dados antigos na retomada. Cada LED precisa de resistor em série. Esse botão não controla o microfone independente do navegador.
+Na montagem ESP-32U confirmada, o microfone usa **SD 22, SCK 26 e WS 25**, o LED vermelho usa **18** e o verde **19**. O botão no **GPIO 23 para GND** alterna o mute do ESP32: vermelho indica captura inativa e verde indica escuta. O firmware descarta dados antigos na retomada. Cada LED precisa de resistor em série. O estado do botão chega ao PC por USB ou Wi-Fi: o painel encerra a captura, cancela a gravação e interrompe a resposta falada. Após desmutar, clique em **Ativar microfone** para retomar a conversa. O microfone continua alimentado em 3,3 V; o mute desativa a captura I2S, sem cortar VDD.
 
 ## Pesquisa e capacidades do Ferris
 
@@ -94,9 +94,11 @@ Conversas ficam apenas em memória, em sessões separadas por aba e com históri
 
 O detector usa RMS, centroide espectral e 13 MFCCs em dez intervalos temporais, totalizando **150 features por janela de 1 segundo**. O frontend C é compartilhado entre o treinamento no PC e o firmware. O modelo inicial é uma regressão logística regularizada, compacta o suficiente para exportar sua inferência ao ESP32; sua qualidade deve ser medida com fala real.
 
-Em **Minha voz**, colete as classes `Ferris`, `Outras palavras` e `Ambiente`. Grave a palavra uma vez no centro de cada clipe. Use várias distâncias, intensidades e ambientes. Inclua palavras parecidas, como “férias” e “feliz”, conversas normais, TV, silêncio e ruídos. Idealmente inclua gravações feitas pelo próprio INMP441 para reduzir diferenças entre microfones.
+Em **Minha voz**, colete as classes `Ferris`, `Outras palavras` e `Ambiente`. Grave a palavra uma vez no centro de cada clipe. Use várias distâncias, intensidades e ambientes. Inclua palavras parecidas, como “férias” e “feliz”, conversas normais, TV, silêncio e ruídos. Use o próprio INMP441 para que o treino receba áudio do mesmo microfone da detecção.
 
-O painel grava pelo **microfone do PC selecionado no navegador**. Durante a captura, confira o nome da entrada e o medidor de nível. Arquivos com todas as amostras zeradas são rejeitados: confira o mute do sistema e a entrada selecionada antes de repetir a gravação. O silêncio real do ambiente pode conter sinal muito baixo e continua sendo aceito como exemplo negativo.
+Em **Minha voz**, a entrada padrão é **ESP32 · microfone conectado à placa (USB)**. Com o LED verde aceso, escolha a classe e clique em **Gravar exemplo de 2 segundos**; diga a palavra assim que clicar e aguarde a transferência (cerca de 10 segundos no total a 115200 baud). O navegador não abre o microfone do PC nessa coleta. O botão físico ou **Parar** cancela o exemplo em andamento. Os novos arquivos recebem o prefixo `esp32-`; os antigos são preservados. Use uma sessão como `esp-sala-01` e mude seu nome em cada nova condição de coleta.
+
+A opção **Microfone deste PC** permanece disponível, com medidor de nível ao vivo. Na coleta USB, o nível ao vivo não é exibido. Arquivos com todas as amostras zeradas são rejeitados: confira o mute do sistema e a entrada selecionada antes de repetir a gravação. O silêncio real do ambiente pode conter sinal muito baixo e continua sendo aceito como exemplo negativo.
 
 Mude o campo **Sessão de gravação** ao mudar de dia ou ambiente. São exigidas no mínimo quatro sessões diferentes, contendo positivos e negativos em cada uma, e pelo menos 12 positivos e 12 negativos no total. Esse mínimo serve para executar o pipeline; comece com dezenas ou centenas de exemplos variados para avaliar utilidade real. Um detector treinado só com sua voz não garante reconhecer outras pessoas, nem funciona como autenticação de identidade.
 
@@ -146,14 +148,17 @@ O **Whisper small** roda em CPU/int8 neste PC e transcreve português. O **Gemma
 
 ```bash
 source .venv/bin/activate
-python -m pip install -e '.[train,voice,device]'
+python -m pip install -e '.[train,voice,device,tts]'
 python tools/setup_whisper.py
+python tools/setup_tts.py
 python -m ferris.server
 ```
 
 O servidor encontra automaticamente `data/whisper/small`. Para outro modelo local CTranslate2, exporte `FERRIS_WHISPER_MODEL=/caminho/do/modelo`. O download precisa ser feito apenas uma vez.
 
-Selecione **ESP32 + Whisper neste PC** e clique em **Ativar microfone**. Diga “Ferris” perto do INMP441 e, após a saudação, faça a pergunta no microfone do PC. A detecção da placa exige duas janelas positivas consecutivas. A captura da pergunta termina com aproximadamente 850 ms de silêncio ou no limite de 12 segundos. O limiar inicial de voz é fixo e precisa ser ajustado se o ambiente ou microfone exigir. A síntese usa uma voz pt-BR do navegador/sistema, preferindo voz local quando disponível. Em **Testar detector e Whisper no PC**, a mesma sequência pode ser avaliada usando apenas o microfone do PC.
+Selecione **ESP32 + Whisper neste PC** e clique em **Ativar microfone**. Diga “Ferris” perto do INMP441 e, após a saudação, faça a pergunta no microfone do PC. A detecção da placa exige duas janelas positivas consecutivas. A captura da pergunta termina com aproximadamente 850 ms de silêncio ou no limite de 12 segundos. O limiar inicial de voz é fixo e precisa ser ajustado se o ambiente ou microfone exigir. A resposta falada usa **Kokoro ONNX**, voz masculina brasileira **Alex**, no PC de destino. O estilo padrão **Masculina suave · fofa** eleva sutilmente o tom; **Masculina original** permite comparar. Use **Testar voz** no painel para ouvir e liberar a reprodução no navegador. Os arquivos ficam em `data/tts/kokoro` (cerca de 354 MB), baixados uma vez com SHA-256 verificado; a síntese não usa um serviço online. Em **Testar detector e Whisper no PC**, a mesma sequência pode ser avaliada usando apenas o microfone do PC.
+
+A síntese usa o runtime [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) e as [vozes Kokoro](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). O extra fixa a versão compatível com o adaptador do export ONNX usado neste projeto.
 
 ## ESP32 e FreeRTOS
 
@@ -162,6 +167,8 @@ Consulte [firmware/README.md](firmware/README.md) para pinagem, configuração e
 ![Tarefas e sincronização FreeRTOS](docs/rtos.svg)
 
 O microcontrolador envia eventos ao serviço **Ferris no PC**, não diretamente ao LM Studio. USB e Wi-Fi usam o mesmo identificador de evento para evitar duas saudações quando ambos chegam ao mesmo servidor.
+
+A coleta de exemplos pelo INMP441 usa USB; o Wi-Fi transporta ativações e estado de mute. A pergunta da conversa ainda é captada pelo microfone do PC. Whisper, Gemma e Kokoro executam no PC que hospeda o Ferris.
 
 **USB:** o servidor identifica automaticamente a ponte CP2102 em Linux. Feche outros monitores seriais antes de iniciar o Ferris. Para selecionar a porta: `python -m ferris.server --serial-port /dev/ttyUSB0`. Para usar somente Wi-Fi, passe `--serial-port ''`.
 
@@ -180,7 +187,7 @@ Informe `FERRIS_TOKEN` em **Conexão → Pesquisa Google e acesso pela rede** no
 ```bash
 source .venv/bin/activate
 python -m unittest discover -s tests -v
-node tools/browser_smoke.mjs
+PYTHON_BIN=python node tools/browser_smoke.mjs
 ```
 
 O segundo comando precisa de Chromium e Node.js. Usa um microfone artificial e um servidor HTTP simulado para testar a interface, sem conectar a um modelo real ou capturar sua voz.

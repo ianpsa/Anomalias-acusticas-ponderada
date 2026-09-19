@@ -25,7 +25,7 @@ Cada LED precisa de seu próprio resistor. O botão de quatro pernas deve usar d
 
 O firmware inicia em escuta: vermelho durante a preparação, depois verde. Um clique silencia; outro retoma. Debounce de 30 ms, amostrado a cada 10 ms, evita múltiplas alternâncias ao segurar o botão. Se o botão estiver pressionado no boot, ele precisa ser solto antes do primeiro clique. O mute não persiste após reiniciar.
 
-Ao silenciar, a captura deixa de publicar blocos e desativa I2S após a leitura corrente (timeout de 200 ms). Áudio, features e eventos antigos são invalidados por uma geração que muda a cada clique. Na retomada, os primeiros quatro blocos são descartados para renovar o DMA, e uma janela nova de 1 segundo precisa ser preenchida. Nenhum evento já enviado pela rede pode ser desfeito. O mute físico controla o ESP32; ele não desliga o microfone do navegador nem cancela uma resposta já em reprodução no PC.
+Ao silenciar, a captura deixa de publicar blocos e desativa I2S após a leitura corrente (timeout de 200 ms). Áudio, features e eventos antigos são invalidados por uma geração que muda a cada clique. Na retomada, os primeiros quatro blocos são descartados para renovar o DMA, e uma janela nova de 1 segundo precisa ser preenchida. Nenhum evento já enviado pela rede pode ser desfeito. O firmware publica o estado por USB após cada clique e a cada 500 ms; por Wi-Fi envia após mudanças e a cada 5 s (sujeito ao timeout HTTP). O painel consulta o estado a cada 500 ms, para o microfone do navegador e cancela voz e gravações. Gerações antigas e estados de boots anteriores são ignorados. Após desmutar, a conversa exige **Ativar microfone** novamente. VDD permanece em 3,3 V: o mute é de captura, não um corte elétrico de alimentação.
 
 O verde apaga por 300 ms ao detectar Ferris e volta a acender, sinalizando a ativação. O vermelho indica mute, preparação ou captura indisponível. Verde indica processamento de áudio habilitado, não gravação persistente nem garantia de que já há um modelo treinado.
 
@@ -55,11 +55,12 @@ Sem `main/model_weights.h`, o firmware compila em modo de diagnóstico: captura 
 | `controls` | 4 | Botão com debounce, mute por geração, LEDs vermelho/verde; polling de 10 ms |
 | `features` | 3 | Retira bloco emprestado do ring, copia para janela circular de 1 s, devolve imediatamente; extrai a cada 250 ms; fila de 3 vetores |
 | `detect` | 2 | Consome vetor por cópia, executa os pesos equivalentes ao ONNX, exige duas janelas positivas, solicita pulso no verde de 300 ms, cooldown 3 s |
+| `recording` | 1 | Comandos USB, buffer de 64 kB para exemplos de 2 s, transferência em blocos com CRC32; inferência suspensa durante coleta |
 | `network` | 1 | Consome fila de 4 eventos, emite evento USB e faz HTTP com timeout de 2 s quando o Wi-Fi está configurado; nunca bloqueia captura ou inferência |
 
 O ring buffer `RINGBUF_TYPE_NOSPLIT` é finito (alocação de oito estruturas de bloco; overhead interno reduz a capacidade útil). Se cheio, a captura descarta o bloco novo e contabiliza a perda. Números de sequência identificam lacunas; a extração reinicia a janela, e a detecção reinicia as confirmações para não combinar trechos descontínuos. As filas têm envio sem espera, com contadores de descarte.
 
-Não há ponteiros compartilhados para features ou eventos: as filas copiam os valores. Só a tarefa de features acessa a janela circular. Os contadores são acessados sob uma seção crítica curta `portMUX_TYPE`; nenhum mutex é mantido durante DSP, I2S, logs ou HTTP. A sincronização das filas e do ring buffer usa os mecanismos internos do FreeRTOS. Um Event Group sinaliza disponibilidade de Wi-Fi.
+Não há ponteiros compartilhados para features ou eventos: as filas copiam os valores. Só a tarefa de features acessa a janela circular. Os contadores são acessados sob uma seção crítica curta `portMUX_TYPE`; nenhum mutex é mantido durante DSP, I2S, logs ou HTTP. A coleta USB compartilha um buffer estático de 64 kB com um mutex breve para cópia e codificação; a transmissão serial acontece fora desse mutex. A sincronização das filas e do ring buffer usa os mecanismos internos do FreeRTOS. Um Event Group sinaliza disponibilidade de Wi-Fi.
 
 ## Medições
 
@@ -83,3 +84,11 @@ O painel **Minha voz → Treinar e usar modelo** pode compilar e gravar a placa 
 ## Divisão do processamento
 
 O evento de ativação chega ao painel do PC, que reproduz a saudação. O microfone do PC capta a pergunta, Whisper transcreve e Gemma responde. A placa fica com a detecção, LEDs, mute e transporte de eventos; não faz streaming da pergunta nem recebe PCM/TTS.
+
+## Coleta do INMP441 pelo painel
+
+Atualize o firmware e inicie o servidor com o extra `device`. Em **Minha voz**, escolha **ESP32**. A captura de treino usa o mesmo PCM I2S da detecção, antes do DSP: mono, 16 kHz, 16 bits, 32.000 amostras. Durante coleta e transferência, a detecção fica suspensa para não responder aos exemplos de treino. O processamento da conversa permanece no PC.
+
+A serial de 115200 baud aceita `FERRIS_RECORD <id>` e `FERRIS_CANCEL <id>` (id de 32 caracteres hexadecimais). O dispositivo responde `FERRIS_RECORD_BEGIN <id>`, 80 linhas `FERRIS_AUDIO <id> <sequência> <base64>` de 800 bytes PCM e `FERRIS_AUDIO_END <id> 64000 <crc32>`. Erros usam `FERRIS_AUDIO_ERROR`. A ponte confere sequência, tamanho e CRC32 antes de salvar WAV. Mute, cancelamento, desconexão e timeout descartam transferências incompletas. O endpoint autenticado `/api/recordings/esp` salva o exemplo; `/api/device/record` retorna WAV sem adicionar ao treino.
+
+`FERRIS_STATE <json>` informa boot, geração, mute e disponibilidade de captura. No Wi-Fi, esse JSON usa o mesmo endpoint e token de `/api/device/wake`, com `type: "state"`. A coleta de exemplos está disponível por USB nesta versão.

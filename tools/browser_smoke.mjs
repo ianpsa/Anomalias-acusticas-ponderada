@@ -88,7 +88,7 @@ s.serve_forever()
   assert.match(await evaluate('document.querySelector(".sources a").href'),/^https:\/\/www.google.com\/search/);
   await evaluate('document.getElementById("tab-voice").click()');
   assert.equal(await evaluate('document.getElementById("voice-pane").hidden'),false);
-  await evaluate('document.getElementById("label").value="noise"; document.getElementById("record").click()');
+  await evaluate('document.getElementById("record-source").value="pc"; document.getElementById("label").value="noise"; document.getElementById("record").click()');
   await until('document.getElementById("count-noise").textContent === "1"');
   assert.match(await evaluate('document.getElementById("record-input").textContent'),/^Microfone: /);
   // Simulate a muted capture at the worklet callback, preserving the real WAV/API path.
@@ -96,6 +96,30 @@ s.serve_forever()
   await until('document.getElementById("record-state").textContent.includes("sem sinal")');
   assert.equal(await evaluate('document.getElementById("count-noise").textContent'),'1');
   assert.match(await evaluate('document.getElementById("record-level-text").textContent'),/Sem sinal/);
+  await evaluate('Capture.prototype.start = window.originalCaptureStart');
+  // ESP collection never requests getUserMedia, and gives a USB-specific error offline.
+  await evaluate('window.pcStarts = 0; Capture.prototype.start = function(...args) { window.pcStarts++; return window.originalCaptureStart.apply(this,args); }; document.getElementById("record-source").value="esp"; document.getElementById("record").click()');
+  await until('document.getElementById("record-state").textContent.includes("Conecte o ESP32")');
+  assert.equal(await evaluate('window.pcStarts'),0);
+  // Physical mute stops an existing track and invalidates a pending speech response.
+  await evaluate('(async () => { window.muteCapture = new Capture(); await window.muteCapture.start(() => {}); window.muteTrack = window.muteCapture.stream.getTracks()[0]; capture = window.muteCapture; enabled = true; applyHardware({muted:true,revision:100}); })()');
+  assert.equal(await evaluate('window.muteTrack.readyState'),'ended');
+  assert.equal(await evaluate('enabled'),false);
+  assert.equal(await evaluate('document.getElementById("record").disabled'),true);
+  await evaluate('applyHardware({muted:false,revision:101});');
+  assert.equal(await evaluate('enabled'),false);
+  const voiceCancelled = await evaluate(`(async () => {
+    const originalFetch = window.fetch; let signal, release;
+    window.fetch = (url, options) => url === '/api/speech' ? new Promise(resolve => { signal = options.signal; release = resolve; }) : originalFetch(url, options);
+    try {
+      const completion = speak('Teste de voz', false, true);
+      applyHardware({muted:true,revision:102});
+      release(new Response(new Blob([new Uint8Array(44)], {type:'audio/wav'})));
+      await completion; await new Promise(resolve => setTimeout(resolve, 20));
+      return signal.aborted && currentSpeech === null && !speaking;
+    } finally { window.fetch = originalFetch; applyHardware({muted:false,revision:103}); }
+  })()`);
+  assert.equal(voiceCancelled,true);
   await evaluate('Capture.prototype.start = window.originalCaptureStart');
   await evaluate('document.getElementById("train-model").click()');
   await until('document.getElementById("training-state").textContent.includes("12 exemplos")');
@@ -138,6 +162,6 @@ for label,hz in [('ferris',900),('other',2400),('noise',3000)]:
   const trainingMobile=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   await writeFile(path.join(temporary,'training-mobile.png'),Buffer.from(trainingMobile.data,'base64'));
   assert.deepEqual(errors,[]);
-  console.log('PASS: LM Studio, Gemma, chat, code refusal, Google fallback, recording, mute rejection, training button, metrics, activation after reload, local voice prerequisites, tabs, desktop/mobile overflow, no JS errors.');
+  console.log('PASS: LM Studio, Gemma, chat, code refusal, Google fallback, PC/ESP recording selection, physical mute, late speech cancellation, training button, metrics, activation after reload, local voice prerequisites, tabs, desktop/mobile overflow, no JS errors.');
   console.log('Screenshots: '+temporary);
 } finally { for (const child of children) child.kill('SIGTERM'); }

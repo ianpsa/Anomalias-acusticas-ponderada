@@ -19,6 +19,7 @@ from .core import Assistant, Settings, UserError, greeting
 from .detector import Detector
 from .training import Training
 from .device import Device, discover_port
+from .speech import Speech
 
 STATIC = Path(__file__).parent / 'static'
 MAX_BODY = 1_000_000
@@ -33,6 +34,7 @@ class Server(ThreadingHTTPServer):
         self.assistant = Assistant(self.settings)
         local_whisper = self.data/'whisper'/'small'
         self.transcriber = Transcriber(whisper or (str(local_whisper) if (local_whisper/'model.bin').is_file() else ''))
+        self.speech = Speech(self.data/'tts/kokoro')
         self.detector = Detector(model_dir)
         self.device = Device(serial_port, self.assistant)
         export_header = header or (Path(model_dir)/'model_weights.h' if model_dir else None)
@@ -128,7 +130,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(dict(settings=self.server.settings.public(), greeting=greeting(self.server.settings.get()),
                                 recordings=counts, local_voice=bool(self.server.transcriber.path),
                                 recording_sessions=len({p.parent.name for p in (self.server.data/'recordings').glob('*/*/*.wav')}),
-                                training=self.server.training.status(), device=self.server.device.status(), wake_model=self.server.detector.ready))
+                                training=self.server.training.status(), device=self.server.device.status(),
+                                hardware=self.server.assistant.hardware_state(), speech=self.server.speech.status(), wake_model=self.server.detector.ready))
             elif path == '/api/training':
                 self.reply(self.server.training.status())
             elif path == '/api/models':
@@ -137,7 +140,8 @@ class Handler(BaseHTTPRequestHandler):
                 since = int(parse_qs(urlsplit(self.path).query).get('since', ['0'])[0])
                 with self.server.assistant.lock:
                     self.reply({'events': [e for e in self.server.assistant.events if e['id'] > since],
-                                'latest': self.server.assistant.event_id})
+                                'latest': self.server.assistant.event_id,
+                                'hardware': self.server.assistant.hardware_state()})
             else:
                 self.reply({'error': 'Rota não encontrada.'}, 404)
         except (UserError, ValueError) as exc:
@@ -149,7 +153,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             data = self.body()
-            if path == '/api/train':
+            if path == '/api/device/record/cancel':
+                self.server.device.cancel_recording()
+                self.reply({'ok': True})
+            elif path == '/api/device/record':
+                self.reply(self.server.device.record(), mime='audio/wav')
+            elif path == '/api/speech':
+                hardware = self.server.assistant.hardware_state()
+                if hardware['muted']:
+                    raise UserError('O botão do ESP32 está em mute.')
+                raw = self.server.speech.synthesize(data.get('text'), data.get('style','soft'))
+                after = self.server.assistant.hardware_state()
+                if after['muted'] or after['revision'] != hardware['revision']:
+                    raise UserError('Voz descartada: o botão de mute foi acionado.')
+                self.reply(raw, mime='audio/wav')
+            elif path == '/api/train':
                 self.reply(self.server.training.start(data.get('split_mode'), data.get('flash', False)), 202)
             elif path == '/api/settings':
                 self.reply(self.server.settings.update(data))
@@ -163,6 +181,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.assistant.reset(self.session(data))
                 self.reply({'ok': True})
             elif path in ('/api/wake', '/api/device/wake'):
+                if path == '/api/device/wake' and data.get('type') == 'state':
+                    state = self.server.assistant.update_hardware(data)
+                    if state['muted']: self.server.device.cancel_recording()
+                    self.reply(state)
+                    return
                 device = data.get('device', 'desktop')
                 confidence = data.get('confidence')
                 metrics = data.get('metrics', {})
@@ -176,24 +199,37 @@ class Handler(BaseHTTPRequestHandler):
                 if event_id is not None and (not isinstance(event_id,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',event_id)):
                     raise UserError('Identificador de evento inválido.')
                 self.reply(self.server.assistant.wake(device, confidence, metrics, event_id))
-            elif path in ('/api/recordings', '/api/transcribe', '/api/detect'):
+            elif path in ('/api/recordings', '/api/recordings/esp', '/api/transcribe', '/api/detect'):
+                hardware = self.server.assistant.hardware_state()
+                if hardware['muted']:
+                    raise UserError('O botão do ESP32 está em mute. Desmute a placa antes de usar o microfone.')
+                label, group = data.get('label'), data.get('group')
+                if path.startswith('/api/recordings') and (label not in ('ferris', 'other', 'noise') or not isinstance(group, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,48}', group)):
+                    raise UserError('Informe classe e sessão de gravação válidas.')
                 try:
-                    raw = base64.b64decode(data.get('audio', ''), validate=True)
+                    raw = self.server.device.record() if path == '/api/recordings/esp' else base64.b64decode(data.get('audio', ''), validate=True)
                 except (ValueError, TypeError, binascii.Error):
                     raise UserError('Áudio inválido.')
                 if path == '/api/detect':
                     self.reply(self.server.detector.detect(raw))
                     return
                 if path == '/api/transcribe':
-                    self.reply({'text': self.server.transcriber.transcribe(raw)})
+                    text = self.server.transcriber.transcribe(raw)
+                    after = self.server.assistant.hardware_state()
+                    if after['muted'] or after['revision'] != hardware['revision']:
+                        raise UserError('Transcrição descartada: o botão de mute foi acionado.')
+                    self.reply({'text': text})
                     return
                 read_recording(raw)
+                after = self.server.assistant.hardware_state()
+                if after['muted'] or after['revision'] != hardware['revision']:
+                    raise UserError('Gravação descartada: o botão de mute foi acionado.')
                 label, group = data.get('label'), data.get('group')
                 if label not in ('ferris', 'other', 'noise') or not isinstance(group, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,48}', group):
                     raise UserError('Informe classe e sessão de gravação válidas.')
                 folder = self.server.data / 'recordings' / label / group
                 folder.mkdir(parents=True, exist_ok=True)
-                name = f'{time.time_ns()}-{secrets.token_hex(4)}.wav'
+                name = ('esp32-' if path == '/api/recordings/esp' else 'pc-') + f'{time.time_ns()}-{secrets.token_hex(4)}.wav'
                 partial = folder / (name+'.part')
                 with open(partial, 'xb') as f:
                     f.write(raw)
