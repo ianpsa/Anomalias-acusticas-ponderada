@@ -274,8 +274,17 @@ $('record').onclick = async () => {
   if (!$('group').checkValidity()) { $('group').reportValidity(); return; }
   const label = $('label').value, group = $('group').value, recording = new Capture(), samples = [];
   await stopAll(); const turn = generation; recordingCapture = recording; $('record').disabled = true; $('listen').disabled = true;
+  $('record-level').value = -60; $('record-level-text').textContent = 'Aguardando áudio…';
   try {
-    await recording.start(chunk => samples.push(...chunk)); $('record-state').textContent = 'Gravando… diga a palavra agora.';
+    await recording.start(chunk => {
+      samples.push(...chunk);
+      const rms = Math.sqrt(chunk.reduce((sum, x) => sum + x*x, 0) / chunk.length);
+      const db = rms > 0 ? 20 * Math.log10(rms) : -96;
+      $('record-level').value = Math.max(-60, db);
+      $('record-level-text').textContent = rms > 0 ? `${db.toFixed(0)} dBFS` : 'Sem sinal — confira o mute e o microfone.';
+    });
+    $('record-input').textContent = 'Microfone: ' + (recording.stream.getAudioTracks()[0]?.label || 'padrão do navegador');
+    $('record-state').textContent = label === 'noise' ? 'Gravando o ambiente…' : 'Gravando… diga a palavra agora.';
     await new Promise(resolve => setTimeout(resolve, 2000)); recording.stop();
     if (turn !== generation) { $('record-state').textContent = 'Gravação cancelada.'; return; }
     await saveRecording(wav(samples), label, group); $('record-state').textContent = 'Exemplo salvo. Pode gravar o próximo.';

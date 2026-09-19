@@ -24,8 +24,10 @@
   <div id="voice-pane" class="pane" hidden>
    <h2>Vamos reconhecer sua voz.</h2><p>Grave “Ferris”, outras palavras e sons do ambiente. Esses exemplos vão treinar o detector de ativação.</p>
    <div class="sample-counts"><div><strong id="count-ferris">0</strong><span>Ferris</span></div><div><strong id="count-other">0</strong><span>Outras palavras</span></div><div><strong id="count-noise">0</strong><span>Ambiente</span></div></div>
-   <label class="field">Sessão de gravação<input id="group" value="ian-sala-01" pattern="[a-zA-Z0-9_-]{1,48}" maxlength="48"></label><p class="fine">Mude a sessão ao trocar de ambiente ou dia. Isso separa treino e avaliação.</p>
+   <label class="field">Sessão de gravação<input id="group" value="ian-sala-01" pattern="[a-zA-Z0-9_-]{1,48}" maxlength="48"></label><p class="fine">Colete pelo menos 4 sessões, mudando de ambiente, distância ou momento. Grave Ferris e negativos em cada sessão. Isso separa treino e avaliação.</p>
    <label class="field">O que você vai gravar?<select id="label"><option value="ferris">A palavra “Ferris”</option><option value="other">Outras palavras (inclua “férias” e “feliz”)</option><option value="noise">Ruído ou silêncio do ambiente</option></select></label>
+   <p id="record-input" class="fine">A gravação usa o microfone selecionado no navegador, neste PC.</p>
+   <label class="field">Nível de entrada<meter id="record-level" min="-60" max="0" value="-60" aria-label="Nível do microfone em decibéis"></meter><span id="record-level-text" class="fine">O nível aparece durante a gravação.</span></label>
    <button id="record" class="primary">Gravar exemplo de 2 segundos</button><p id="record-state" role="status">Diga a palavra no centro da gravação.</p>
    <label class="upload">Ou importar arquivos WAV<input id="upload" type="file" accept=".wav,audio/wav" multiple></label><p class="fine">WAV mono, 16 kHz, 16 bits; até 5 segundos. Os áudios ficam neste PC e não vão para o GitHub.</p>
    <p id="model-state" class="model-state">Modelo pessoal ainda não treinado.</p>

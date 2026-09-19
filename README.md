@@ -95,6 +95,8 @@ O detector usa RMS, centroide espectral e 13 MFCCs em dez intervalos temporais, 
 
 Em **Minha voz**, colete as classes `Ferris`, `Outras palavras` e `Ambiente`. Grave a palavra uma vez no centro de cada clipe. Use várias distâncias, intensidades e ambientes. Inclua palavras parecidas, como “férias” e “feliz”, conversas normais, TV, silêncio e ruídos. Idealmente inclua gravações feitas pelo próprio INMP441 para reduzir diferenças entre microfones.
 
+O painel grava pelo **microfone do PC selecionado no navegador**. Durante a captura, confira o nome da entrada e o medidor de nível. Arquivos com todas as amostras zeradas são rejeitados: confira o mute do sistema e a entrada selecionada antes de repetir a gravação. O silêncio real do ambiente pode conter sinal muito baixo e continua sendo aceito como exemplo negativo.
+
 Mude o campo **Sessão de gravação** ao mudar de dia ou ambiente. São exigidas no mínimo quatro sessões diferentes, contendo positivos e negativos em cada uma, e pelo menos 12 positivos e 12 negativos no total. Esse mínimo serve para executar o pipeline; comece com dezenas ou centenas de exemplos variados para avaliar utilidade real. Um detector treinado só com sua voz não garante reconhecer outras pessoas, nem funciona como autenticação de identidade.
 
 ```bash

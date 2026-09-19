@@ -90,6 +90,13 @@ s.serve_forever()
   assert.equal(await evaluate('document.getElementById("voice-pane").hidden'),false);
   await evaluate('document.getElementById("label").value="noise"; document.getElementById("record").click()');
   await until('document.getElementById("count-noise").textContent === "1"');
+  assert.match(await evaluate('document.getElementById("record-input").textContent'),/^Microfone: /);
+  // Simulate a muted capture at the worklet callback, preserving the real WAV/API path.
+  await evaluate('window.originalCaptureStart = Capture.prototype.start; Capture.prototype.start = function(callback) { return window.originalCaptureStart.call(this, chunk => callback(new Float32Array(chunk.length))); }; document.getElementById("record").click()');
+  await until('document.getElementById("record-state").textContent.includes("sem sinal")');
+  assert.equal(await evaluate('document.getElementById("count-noise").textContent'),'1');
+  assert.match(await evaluate('document.getElementById("record-level-text").textContent'),/Sem sinal/);
+  await evaluate('Capture.prototype.start = window.originalCaptureStart');
   await evaluate('document.getElementById("voice-mode").value="local"; document.getElementById("listen").click()');
   await until('document.getElementById("notice").textContent.includes("detector ONNX treinado")');
   await evaluate('document.getElementById("tab-chat").click()');
@@ -101,6 +108,6 @@ s.serve_forever()
   const mobile=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   await writeFile(path.join(temporary,'mobile.png'),Buffer.from(mobile.data,'base64'));
   assert.deepEqual(errors,[]);
-  console.log('PASS: LM Studio connection, Gemma selection, chat, code refusal, Google fallback, microphone recording with fake audio, untrained-model notice, tabs, desktop/mobile overflow, no JS errors.');
+  console.log('PASS: LM Studio connection, Gemma selection, chat, code refusal, Google fallback, microphone recording with fake audio, muted recording rejected, untrained-model notice, tabs, desktop/mobile overflow, no JS errors.');
   console.log('Screenshots: '+temporary);
 } finally { for (const child of children) child.kill('SIGTERM'); }

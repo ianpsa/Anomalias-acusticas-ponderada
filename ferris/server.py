@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from .audio import Transcriber, read_wav
+from .audio import Transcriber, read_recording
 from .core import Assistant, Settings, UserError, greeting
 from .detector import Detector
 
@@ -168,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path == '/api/transcribe':
                     self.reply({'text': self.server.transcriber.transcribe(raw)})
                     return
-                read_wav(raw, maximum=5)
+                read_recording(raw)
                 label, group = data.get('label'), data.get('group')
                 if label not in ('ferris', 'other', 'noise') or not isinstance(group, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,48}', group):
                     raise UserError('Informe classe e sessão de gravação válidas.')

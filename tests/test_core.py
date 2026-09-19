@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import tempfile
@@ -127,6 +128,22 @@ class HTTPTests(unittest.TestCase):
     def test_cross_origin_denied(self):
         status,_=self.call('/api/settings',{'model':'bad'},{'Origin':'http://evil.example'})
         self.assertEqual(status,403)
+
+    def test_recordings_reject_muted_input_but_accept_quiet_ambience(self):
+        def audio(pcm):
+            buff=io.BytesIO()
+            with wave.open(buff,'wb') as f:
+                f.setnchannels(1); f.setsampwidth(2); f.setframerate(16000); f.writeframes(pcm)
+            return base64.b64encode(buff.getvalue()).decode()
+        folder=Path(self.temp.name)/'recordings'
+        before=set(folder.glob('*/*/*.wav'))
+        for label in ['ferris','other','noise']:
+            status,body=self.call('/api/recordings',{'label':label,'group':'muted','audio':audio(b'\0'*64000)})
+            self.assertEqual(status,400)
+            self.assertIn('sem sinal',json.loads(body)['error'])
+        self.assertEqual(set(folder.glob('*/*/*.wav')),before)
+        status,_=self.call('/api/recordings',{'label':'noise','group':'quiet','audio':audio(b'\x01\x00'*32000)})
+        self.assertEqual(status,201)
 
     def test_device_token_and_event(self):
         status,_=self.call('/api/device/wake',{'device':'esp32'})

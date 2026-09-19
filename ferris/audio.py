@@ -21,6 +21,14 @@ def read_wav(raw, maximum=15):
         raise UserError('Arquivo WAV inválido.') from exc
 
 
+def read_recording(raw):
+    """Validate training audio without rejecting quiet, real ambient recordings."""
+    pcm = read_wav(raw, maximum=5)
+    if not any(pcm):
+        raise UserError('Gravação sem sinal de áudio. Confira o mute do sistema e o microfone selecionado no navegador; depois grave novamente.')
+    return pcm
+
+
 class Transcriber:
     def __init__(self, model_path=''):
         self.path = model_path

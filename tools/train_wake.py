@@ -12,7 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from ferris.audio import read_wav
+from ferris.audio import read_recording
+from ferris.core import UserError
 from ferris.detector import Features
 from tools.build_dsp import build
 
@@ -66,7 +67,11 @@ def train(data, output, header=None):
     records, seen = [], set()
     for label in ('ferris', 'other', 'noise'):
         for path in sorted((Path(data)/label).glob('*/*.wav')):
-            raw = path.read_bytes(); pcm = read_wav(raw, maximum=5)
+            raw = path.read_bytes()
+            try:
+                pcm = read_recording(raw)
+            except UserError as exc:
+                raise ValueError(f'{path}: {exc}') from exc
             digest = hashlib.sha256(pcm).hexdigest()
             if digest in seen:
                 raise ValueError(f'Áudio duplicado: {path}. Remova duplicatas antes de avaliar.')
