@@ -20,8 +20,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from ferris.audio import Transcriber
 from ferris.core import UserError
 from ferris.speech import Speech
@@ -170,9 +168,9 @@ def main():
     token = os.environ.get('FERRIS_VOICE_TOKEN', '')
     worker = Worker((args.host, args.port), args.data, token)
     if not worker.transcriber.path:
-        print('Aviso: Whisper ausente. Execute tools/setup_whisper.py.', file=sys.stderr)
+        print('Aviso: Whisper ausente. Execute tools/models/setup_whisper.py.', file=sys.stderr)
     if not worker.speech.designed.ready:
-        print('Aviso: voz Qwen ausente. Execute tools/setup_designed_tts.py.', file=sys.stderr)
+        print('Aviso: voz Qwen ausente. Execute tools/models/setup_designed_tts.py.', file=sys.stderr)
     if not token and args.host != '127.0.0.1':
         print('Aviso: sem FERRIS_VOICE_TOKEN, qualquer máquina da rede pode usar este worker.', file=sys.stderr)
     if worker.speech.designed.ready:

@@ -17,7 +17,7 @@ class Features:
     def __init__(self, library=None):
         path = Path(library or ROOT/'build'/'libferris_dsp.so')
         if not path.is_file():
-            raise UserError('Compile a extração de áudio com python3 tools/build_dsp.py.')
+            raise UserError('Compile a extração de áudio com python3 tools/training/build_dsp.py.')
         self.lib = ctypes.CDLL(str(path))
         self.lib.ferris_features.argtypes = [ctypes.POINTER(ctypes.c_int16), ctypes.POINTER(ctypes.c_float)]
         self.lib.ferris_features.restype = None
@@ -121,7 +121,7 @@ class Detector:
         try:
             if self.session is None:
                 if not self.ready:
-                    raise UserError('Ainda não há modelo ONNX treinado. Grave os exemplos e execute tools/train_wake.py.')
+                    raise UserError('Ainda não há modelo ONNX treinado. Grave os exemplos e execute tools/training/train_wake.py.')
                 self.features, self.metadata, self.session = self._load(self.folder)
             import numpy as np
             vector = np.asarray([self.features(pcm)], dtype=np.float32)

@@ -11,12 +11,12 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from ferris.audio import read_recording
 from ferris.core import UserError
 from ferris.detector import Features
-from tools.build_dsp import build
+from tools.training.build_dsp import build
 
 
 def windows(pcm, positive):

@@ -1,0 +1,9 @@
+# Linux: optional access to the ESP32, without privileged mode or Docker socket.
+services:
+  ferris:
+    environment:
+      FERRIS_SERIAL_PORT: /dev/ttyUSB0
+    devices:
+      - "${FERRIS_SERIAL_PORT:-/dev/ttyUSB0}:/dev/ttyUSB0"
+    group_add:
+      - "${FERRIS_SERIAL_GID:-0}"

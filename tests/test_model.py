@@ -8,7 +8,7 @@ import unittest
 import wave
 from pathlib import Path
 from ferris.detector import Features, Detector
-from tools.build_dsp import build
+from tools.training.build_dsp import build
 
 
 class DSPTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class DSPTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('onnxruntime') and importlib.util.find_spec('sklearn'),'Install .[train]')
 class ONNXTests(unittest.TestCase):
     def test_exploratory_split_keeps_files_whole_and_all_classes(self):
-        from tools.train_wake import split_recordings, split_sessions
+        from tools.training.train_wake import split_recordings, split_sessions
         records=[{'group':'one-session','category':category,'label':int(category=='ferris')}
                  for category in ('ferris','other','noise') for _ in range(20)]
         with self.assertRaisesRegex(ValueError,'4 sessões'):
@@ -50,7 +50,7 @@ class ONNXTests(unittest.TestCase):
         # Synthetic tones only test plumbing. Never report these as wake-word accuracy.
         import numpy as np
         import onnx
-        from tools.train_wake import train
+        from tools.training.train_wake import train
         rng=np.random.default_rng(5)
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); data=root/'recordings'

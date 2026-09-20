@@ -19,16 +19,19 @@ class Training:
         self.job = {'state': 'idle', 'message': 'Pronto para treinar.'}
         self.worker = None
         self.device = device
+        self.flash_supported = os.getenv('FERRIS_FLASH_ENABLED', '1') == '1'
 
     def status(self):
         with self.lock:
-            return {**self.job, 'model': self.detector.summary()}
+            return {**self.job, 'model': self.detector.summary(), 'flash_supported': self.flash_supported}
 
     def start(self, mode, flash=False):
         if mode not in ('sessions', 'recordings'):
             raise UserError('Escolha avaliação por sessões ou treino experimental.')
         if type(flash) is not bool:
             raise UserError('Opção de gravação do ESP32 inválida.')
+        if flash and not self.flash_supported:
+            raise UserError('No Docker, treine pelo painel e use o serviço firmware do Compose para gravar a placa.')
         if flash and (not self.device or not self.device.status()['available']):
             raise UserError('Conecte o ESP32 por USB antes de gravar o firmware.')
         files = list((self.data/'recordings').glob('*/*/*.wav'))
@@ -55,7 +58,7 @@ class Training:
         try:
             output.mkdir(parents=True)
             log.parent.mkdir(parents=True, exist_ok=True)
-            command = [sys.executable, str(ROOT/'tools/train_wake.py'),
+            command = [sys.executable, str(ROOT/'tools/training/train_wake.py'),
                        '--data', str(self.data/'recordings'), '--output', str(output),
                        '--header', str(output/'model_weights.h'), '--split-mode', mode]
             with log.open('wb') as stream:
@@ -77,9 +80,9 @@ class Training:
                 self.device.stop()
                 try:
                     with log.open('ab') as stream:
-                        subprocess.run([sys.executable, str(ROOT/'tools/flash_esp32.py'), '--port', self.device.port],
+                        subprocess.run([sys.executable, str(ROOT/'tools/firmware/flash_esp32.py'), '--port', self.device.port],
                                        cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, check=True, timeout=600)
-                    message = 'Modelo treinado e gravado no ESP32. Whisper e Gemma continuam neste PC.'
+                    message = 'Modelo treinado e gravado no ESP32. Os serviços de voz continuam no PC de destino.'
                 finally:
                     self.device.start()
         except subprocess.TimeoutExpired:

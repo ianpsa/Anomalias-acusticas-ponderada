@@ -15,3 +15,5 @@ firmware/main/model_weights.h
 .pytest_cache/
 *.egg-info/
 .vscode/
+assignment.pdf
+firmware/data/

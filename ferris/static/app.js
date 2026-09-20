@@ -292,7 +292,9 @@ async function refresh() {
   $('voice-cost').textContent = 'Voz expressiva Qwen. A espera depende de onde a síntese roda. ' + (info.speech?.designed_preview_ready ? 'A prévia já está pronta para ouvir.' : 'A primeira prévia também precisa ser gerada.');
   $('speech-voice').textContent = info.speech?.ready ? `${info.speech.engine} · Português · ${info.speech.remote ? 'PC de destino' : 'Neste PC'}` : `Voz indisponível. ${info.speech?.error || 'Confira os modelos no serviço de voz.'}`;
   $('device-state').textContent = info.device?.connected ? 'ESP32 conectado por USB. Eventos por Wi-Fi também são aceitos quando configurados.' : 'USB não conectado. O modo Wi-Fi continua disponível quando configurado.';
-  $('flash-esp32').disabled = !info.device?.available || info.training?.state === 'running';
+  $('flash-esp32').disabled = info.training?.flash_supported === false || !info.device?.available || info.training?.state === 'running';
+  if (info.training?.flash_supported === false) $('flash-esp32').checked = false;
+  $('flash-note').textContent = info.training?.flash_supported === false ? 'No Docker, treine aqui e use o serviço firmware do Compose para atualizar o ESP32. O comando está no README.' : 'O treino exporta os pesos do detector; esta opção também atualiza a placa por USB.';
   return info;
 }
 function renderTraining(job) {

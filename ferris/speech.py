@@ -56,9 +56,9 @@ class Speech:
         if not text:
             raise UserError('Não há texto para falar.')
         if voice == 'ferris' and not self.designed.ready:
-            raise UserError('Execute tools/setup_designed_tts.py no PC de destino para instalar a voz expressiva.')
+            raise UserError('Execute tools/models/setup_designed_tts.py no PC de destino para instalar a voz expressiva.')
         if voice != 'ferris' and not self.ready:
-            raise UserError('Instale o extra tts e execute tools/setup_tts.py no PC de destino para habilitar as vozes.')
+            raise UserError('Instale o extra tts e execute tools/models/setup_tts.py no PC de destino para habilitar as vozes.')
         if not self.lock.acquire(blocking=False):
             raise UserError('A voz está sendo preparada. Aguarde um instante e tente novamente.')
         try:

@@ -77,5 +77,5 @@ def setup(output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parent.parent/'data/tts/qwen-design')
+    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[2]/'data/tts/qwen-design')
     setup(parser.parse_args().output)

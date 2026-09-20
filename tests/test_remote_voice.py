@@ -12,7 +12,7 @@ from ferris.core import Settings, UserError
 from ferris.designed_speech import FILES
 from ferris.remote_voice import RemoteSpeech, RemoteTranscriber
 from ferris.server import Server
-from tools.voice_worker import Worker, read_upload
+from ferris.voice_worker import Worker, read_upload
 
 
 def wav(rate=16000):
