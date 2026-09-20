@@ -224,7 +224,7 @@ class Assistant:
         s = self.settings.get()
         now = datetime.now(ZoneInfo(s['timezone']))
         prompt = (f'Você é Ferris, assistente de voz de {s["name"]}. Responda em português brasileiro, '
-                  f'com calor humano e em até 3 frases curtas. Data e hora locais: {now.isoformat()}. '
+                  f'com calor humano e em até 3 frases curtas. Não use travessões. Data e hora locais: {now.isoformat()}. '
                   'Use o horário para contextualizar saudações. Não invente compromissos, clima ou feriados. '
                   'Não gere código, comandos, scripts nem instruções de programação; recuse esses pedidos brevemente. '
                   'Você não controla arquivos, terminal, compras nem dispositivos. Não afirme ter executado ações. '

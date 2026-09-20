@@ -68,9 +68,11 @@ docker compose down               # para os containers; data/ e models/ continua
 
 ### Falando com ele
 
-&emsp; Ative o microfone no painel, escolha **ESP32 + Whisper remoto** e diga "Ferris". A placa detecta o nome, ele fala a saudação e abre uma janela de 20 segundos para uma pergunta. A pergunta usa o microfone do navegador, vai para o Whisper no PC de destino e só o texto segue para o Gemma. A voz da resposta também é gerada no destino, mas toca no navegador deste PC. A placa ainda não transmite a pergunta nem reproduz a resposta.
+&emsp; Deixei a tela principal com a conversa e o microfone. **Ajustar voz e microfone** abre os testes e a escolha da voz; **Conexão** reúne os servidores e as chaves; **Minha voz** fica com as gravações e o treino. As opções que uso menos ficam recolhidas para o painel não virar um manual.
 
-&emsp; Depois disso, para perguntar de novo é só chamar "Ferris" outra vez. O botão **Parar** interrompe a resposta, e o botão físico bloqueia a escuta. Também dá para conversar por texto ou usar **Chamar Ferris** para testar a saudação sem depender do detector.
+&emsp; Ative o microfone no painel, em **Ajustar voz e microfone**, escolha **ESP32 + Whisper remoto** e diga "Ferris". A placa detecta o nome, ele fala a saudação e abre uma janela de 20 segundos para uma pergunta. A pergunta usa o microfone do navegador, vai para o Whisper no PC de destino e só o texto segue para o Gemma. A voz da resposta também é gerada no destino, mas toca no navegador deste PC. A placa ainda não transmite a pergunta nem reproduz a resposta.
+
+&emsp; Depois disso, para perguntar de novo é só chamar "Ferris" outra vez. O botão **Parar** interrompe a resposta, e o botão físico bloqueia a escuta. Também dá para conversar por texto ou abrir **Ajustar voz e microfone** e usar **Chamar Ferris** para testar a saudação sem depender do detector.
 
 > obs: abra o painel em `localhost`, porque o navegador precisa de um contexto seguro para liberar o microfone. E a voz Qwen ainda leva alguns segundos para gerar uma frase nova, o cache ajuda nas falas repetidas, não faz milagre hehe.
 

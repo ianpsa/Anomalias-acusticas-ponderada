@@ -283,15 +283,15 @@ async function refresh() {
   $('voice-mode').options[0].textContent = 'ESP32 + Whisper ' + (info.transcription?.remote ? 'remoto' : 'neste PC');
   $('voice-choice').replaceChildren(...(info.speech?.voices || ['ferris']).map(voice => {
     const option = document.createElement('option'); option.value = voice;
-    option.textContent = voice === 'ferris' ? 'Ferris · expressivo' : `Rápida · voz ${voice.slice(1)}`;
+    option.textContent = voice === 'ferris' ? 'Ferris' : `Voz ${voice.slice(1)} (rápida)`;
     return option;
   }));
   try { const saved = localStorage.getItem('ferris-voice-v2'); if (info.speech?.voices.includes(saved)) $('voice-choice').value = saved; } catch (_) {}
   updateVoiceNote();
   $('voice-cost').hidden = $('voice-choice').value !== 'ferris';
-  $('voice-cost').textContent = 'Voz expressiva Qwen. A espera depende de onde a síntese roda. ' + (info.speech?.designed_preview_ready ? 'A prévia já está pronta para ouvir.' : 'A primeira prévia também precisa ser gerada.');
-  $('speech-voice').textContent = info.speech?.ready ? `${info.speech.engine} · Português · ${info.speech.remote ? 'PC de destino' : 'Neste PC'}` : `Voz indisponível. ${info.speech?.error || 'Confira os modelos no serviço de voz.'}`;
-  $('device-state').textContent = info.device?.connected ? 'ESP32 conectado por USB. Eventos por Wi-Fi também são aceitos quando configurados.' : 'USB não conectado. O modo Wi-Fi continua disponível quando configurado.';
+  $('voice-cost').textContent = info.speech?.designed_preview_ready ? 'Prévia pronta. Frases novas levam mais tempo.' : 'A primeira prévia pode levar alguns segundos.';
+  $('speech-voice').textContent = info.speech?.ready ? `Voz pronta ${info.speech.remote ? 'no PC de destino' : 'neste PC'}.` : `Voz indisponível. ${info.speech?.error || 'Confira os modelos no serviço de voz.'}`;
+  $('device-state').textContent = info.device?.connected ? 'ESP32 conectado por USB.' : 'USB desconectado. Wi-Fi disponível se configurado.';
   $('flash-esp32').disabled = info.training?.flash_supported === false || !info.device?.available || info.training?.state === 'running';
   if (info.training?.flash_supported === false) $('flash-esp32').checked = false;
   $('flash-note').textContent = info.training?.flash_supported === false ? 'No Docker, treine aqui e use o serviço firmware do Compose para atualizar o ESP32. O comando está no README.' : 'O treino exporta os pesos do detector; esta opção também atualiza a placa por USB.';
@@ -379,7 +379,7 @@ $('test-connection').onclick = async () => {
 };
 $('listen').onclick = toggleListen; $('wake').onclick = () => wake(); $('stop').onclick = stopAll;
 function updateVoiceNote() {
-  $('voice-note').textContent = {esp: 'Diga “Ferris” antes de cada pergunta. A placa detecta o nome. A pergunta usa o microfone do navegador e segue ao Whisper configurado.', local: 'Teste do detector ONNX neste PC. A transcrição usa o Whisper configurado em Conexão; somente texto vai ao LM Studio.', browser: 'No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.'}[$('voice-mode').value];
+  $('voice-note').textContent = {esp: 'O ESP32 detecta o nome. O microfone deste PC capta a pergunta.', local: 'O microfone deste PC detecta o nome e capta a pergunta.', browser: 'O navegador reconhece o nome por transcrição e pode enviar áudio a um serviço online.'}[$('voice-mode').value];
 }
 $('voice-mode').onchange = () => { stopListening(); updateVoiceNote(); };
 $('test-voice-connection').onclick = async () => {
@@ -392,7 +392,6 @@ $('test-voice-connection').onclick = async () => {
 };
 $('chat-form').onsubmit = (e) => { e.preventDefault(); if (busy) return; const text = $('message').value.trim(); if (text) { $('message').value = ''; ask(text, $('search').checked); } };
 $('message').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } };
-document.querySelectorAll('[data-prompt]').forEach(b => b.onclick = () => ask(b.dataset.prompt));
 $('clear').onclick = async () => { await stopAll(); $('messages').replaceChildren(); $('latency').textContent = ''; };
 for (const tab of ['chat', 'voice']) $('tab-' + tab).onclick = () => {
   for (const t of ['chat', 'voice']) { $('tab-' + t).classList.toggle('selected', tab === t); $('tab-' + t).setAttribute('aria-selected', String(t === tab)); $(t + '-pane').hidden = tab !== t; }
@@ -425,7 +424,7 @@ $('record').onclick = async () => {
       const rms = Math.sqrt(chunk.reduce((sum, x) => sum + x*x, 0) / chunk.length);
       const db = rms > 0 ? 20 * Math.log10(rms) : -96;
       $('record-level').value = Math.max(-60, db);
-      $('record-level-text').textContent = rms > 0 ? `${db.toFixed(0)} dBFS` : 'Sem sinal — confira o mute e o microfone.';
+      $('record-level-text').textContent = rms > 0 ? `${db.toFixed(0)} dBFS` : 'Sem sinal. Confira o mute e o microfone.';
     });
     $('record-input').textContent = 'Microfone: ' + (recording.stream.getAudioTracks()[0]?.label || 'padrão do navegador');
     $('record-state').textContent = label === 'noise' ? 'Gravando o ambiente…' : 'Gravando… diga a palavra agora.';

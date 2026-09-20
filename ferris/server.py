@@ -311,7 +311,7 @@ def main():
     with Server((args.host, args.port), args.data, token, os.getenv('FERRIS_DEVICE_TOKEN', ''),
                 os.getenv('FERRIS_WHISPER_MODEL', ''), model_dir=args.models, serial_port=args.serial_port,
                 voice_url=args.voice_url) as server:
-        print(f'Ferris em http://{args.host}:{server.server_port} — Ctrl+C para encerrar', flush=True)
+        print(f'Ferris em http://{args.host}:{server.server_port}: Ctrl+C para encerrar', flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
