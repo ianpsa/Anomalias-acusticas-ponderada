@@ -102,6 +102,8 @@ docker compose down               # para os containers; data/ e models/ continua
 
 &emsp; O ambiente usado nas misturas sai só das gravações de treino. Pegar ruído de validação ou de teste colocaria áudio desses conjuntos dentro do modelo. O `wake.json` registra quantas janelas cada classe ganhou.
 
+&emsp; Falso positivo por janela não é falso disparo. A placa só ativa com duas janelas positivas seguidas e espera 3 segundos depois de cada ativação, então o número que importa é falsa ativação por hora em áudio contínuo, medida por `tools/training/benchmark.py`, e não a taxa por janela do `wake.json`.
+
 &emsp; Para ouvir o que cada transformação faz, sem alterar nada:
 
 ```sh
@@ -161,7 +163,7 @@ compose.yaml        painel, voz, firmware e testes
 compose.usb.yaml    acesso opcional ao USB no Linux
 ```
 
-&emsp; No firmware, captura, controles, extração de features, detecção, gravação e envio de eventos ficam em tarefas separadas. A captura passa blocos de áudio para um ring buffer, a extração calcula RMS, centroide e MFCCs, e a detecção exige duas janelas positivas. As filas não seguram a captura esperando rede, e o mute invalida os dados antigos que ainda estavam em trânsito.
+&emsp; No firmware, captura, controles, extração de features, detecção, gravação e envio de eventos ficam em tarefas separadas. A captura passa blocos de áudio para um ring buffer, a extração calcula RMS, centroide e MFCCs, e a detecção exige duas janelas positivas. Antes das contas, a janela perde a média, o que tira o offset do INMP441 que entrava inteiro no RMS, e a trilha espectral recebe pré-ênfase de 0,97, que realça as formantes. O RMS continua sendo medido sem pré-ênfase, para seguir sendo energia. O mesmo C roda no PC e na placa, então filtro e features são idênticos nos dois lados. As filas não seguram a captura esperando rede, e o mute invalida os dados antigos que ainda estavam em trânsito.
 
 &emsp; As prioridades têm nome em `main.c` e seguem período mais curto, prioridade maior. A captura é a única com prazo firme, porque bloco de I2S perdido não volta; rede e gravação são soft e ficam no fim da fila. A tarefa de controles é periódica de 10 ms e usa `xTaskDelayUntil`, que conta a partir do despertar anterior, então o tempo do laço não empurra o período.
 
