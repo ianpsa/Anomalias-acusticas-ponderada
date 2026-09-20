@@ -50,8 +50,16 @@ class DesignedSpeechTests(unittest.TestCase):
         self.pipe.decode_chunked.assert_not_called()
 
     def test_chunking_preserves_all_words(self):
-        text = ('Um exemplo de frase longa em português. '*12).strip()
-        self.voice.synthesize(text)
-        chunks = [call.args[0] for call in self.pipe.generate.call_args_list]
+        text = ' '.join(f'palavra{i}' for i in range(60))
+        self.pipe.generate.side_effect = lambda chunk, **kw: np.full((5,16), int(chunk.split()[0][7:]), dtype=np.int64)
+        self.pipe.decode_chunked.side_effect = lambda codes: np.full((1,1,2400), codes[0,0,0]/100, dtype=np.float32)
+        raw = self.voice.synthesize(text)
+        # Threads may start in any order; the final WAV must preserve text order.
+        chunks = sorted((call.args[0] for call in self.pipe.generate.call_args_list), key=text.index)
         self.assertEqual(' '.join(chunks), text)
         self.assertTrue(all(len(chunk)<=140 for chunk in chunks))
+        with wave.open(io.BytesIO(raw)) as wav:
+            samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype='<i2')
+        for i, chunk in enumerate(chunks):
+            expected = int(chunk.split()[0][7:]) / 100 * 32767
+            self.assertAlmostEqual(int(samples[i*7200]), expected, delta=1)

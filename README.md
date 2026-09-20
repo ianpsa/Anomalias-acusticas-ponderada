@@ -9,7 +9,8 @@ Este é o projeto da ponderada de RTOS. O relatório técnico da entrega está e
 | Onde | Responsabilidade |
 |---|---|
 | ESP32 | Captura I2S contínua, extração de features, inferência do detector, LEDs, botão de mute, envio de eventos por USB e Wi-Fi |
-| PC | Painel web, transcrição com Whisper, resposta com Gemma no LM Studio, síntese de voz, treinamento do modelo |
+| PC conectado ao ESP32 | Painel web, captura/reprodução de áudio, ponte USB/Wi-Fi e treinamento do detector |
+| PC de destino (`192.168.15.17`) | Whisper e Qwen no worker de voz (`8770`), Gemma no LM Studio (`1234`) |
 
 A placa nunca executa Whisper, LLM ou síntese. O PC nunca participa da detecção embarcada. O artefato ONNX e os pesos exportados em C compartilham o mesmo extrator de features, então treino e firmware enxergam os mesmos números.
 
@@ -20,13 +21,10 @@ Requer Python 3.11 a 3.13 e um compilador C (`cc`/GCC) para a extração compart
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[train,voice,device,tts]'
-python tools/setup_whisper.py
-python tools/setup_tts.py
-python tools/setup_designed_tts.py
+python -m pip install -e '.[train,device]'
 ```
 
-Os modelos de voz ficam em `data/whisper` e `data/tts`, fora do Git. O download é feito uma única vez. `tools/setup_designed_tts.py` baixa cerca de 1,75 GB com revisões e SHA-256 fixados.
+No PC de destino, instale as dependências e modelos de voz conforme **Voz em outra máquina** abaixo. O PC conectado ao ESP32 não precisa carregar Whisper nem Qwen quando o worker remoto está configurado.
 
 ### LM Studio
 
@@ -59,8 +57,8 @@ O microfone do navegador exige contexto seguro. Use `localhost` no próprio PC. 
 
 | Modo | O que faz |
 |---|---|
-| **ESP32 + Whisper neste PC** | Modo principal. A placa detecta Ferris, o microfone do PC capta a pergunta, Whisper transcreve e o LLM responde |
-| **Testar detector e Whisper no PC** | Mesma sequência usando só o microfone do PC, sem depender da placa |
+| **ESP32 + Whisper remoto** | Modo principal. A placa detecta Ferris, o microfone do PC capta a pergunta, Whisper transcreve no destino e o LLM responde |
+| **Testar detector neste PC + Whisper** | Mesma sequência usando só o microfone do PC, sem depender da placa |
 | **Voz do navegador** | Reconhece Ferris por transcrição do navegador. Requer Chromium ou Chrome e pode processar áudio online. Não é o detector ONNX embarcado |
 | **Chamar Ferris** | Testa a saudação contextual sem microfone nem modelo treinado |
 | **Minha voz** | Grava e importa exemplos para o treinamento |
@@ -81,23 +79,71 @@ Ferris não tem ferramentas de terminal, edição de arquivos ou execução de c
 
 ## Voz em outra máquina
 
-Whisper e a síntese Qwen são o que mais pesa, e o LM Studio não serve rotas de áudio.
-Para rodar os dois em um computador mais rápido, suba `tools/voice_worker.py` lá:
+A configuração desta instalação é:
+
+| Serviço | Endereço | Modelo |
+|---|---|---|
+| LM Studio | `http://192.168.15.17:1234/v1` | `google/gemma-4-12b-qat` (confira em **Buscar modelos**) |
+| Worker Whisper + voz | `http://192.168.15.17:8770/v1` | Whisper small + Qwen3-TTS VoiceDesign ONNX |
+| Painel no PC do ESP32 | `http://127.0.0.1:8765` | Detector ONNX para treino/testes |
+
+Em **Conexão**, salve os dois endereços, selecione o modelo de conversa e clique em
+**Verificar Whisper e voz**. A mudança vale imediatamente e persiste em
+`data/settings.json`, inclusive após reiniciar. O painel distingue transcrição local,
+remota e serviço indisponível. Se o worker cair, não há fallback silencioso para
+Whisper/Qwen neste PC. A reprodução da resposta continua no navegador deste PC.
+A pergunta também é captada pelo microfone do navegador; a placa detecta a ativação,
+e **Minha voz → ESP32** grava exemplos de treino pelo microfone da placa.
+
+No **PC de destino**, dentro deste repositório e com o ambiente Python ativado:
 
 ```bash
+python -m pip install -e '.[train,voice,tts]'
+python tools/setup_whisper.py
+python tools/setup_designed_tts.py
 python tools/voice_worker.py --host 0.0.0.0 --port 8770
 ```
 
-Ele expõe `/v1/audio/transcriptions` e `/v1/audio/speech`, no mesmo formato da API
-OpenAI que o LM Studio usa para texto. No PC do ESP32, aponte o Ferris para ele:
+Os modelos ficam em `data/whisper` e `data/tts`, fora do Git. O download é feito uma
+vez; `setup_designed_tts.py` baixa cerca de 1,75 GB com revisões e SHA-256 fixados.
+Ao atualizar o código do worker, reinicie esse processo no destino. Ele pode aquecer
+Qwen em segundo plano e rejeita pedidos de síntese simultâneos, mantendo o cancelamento
+restrito ao `request_id` da fala. O cliente também funciona com a versão anterior do
+worker; para proteger pedidos de vários clientes, atualize o worker.
+
+O worker oferece `/v1/audio/transcriptions` (WAV bruto ou multipart com campo `file`),
+`/v1/audio/speech` (JSON `input`, `voice: "ferris"`, `response_format: "wav"`) e
+`/health`. São as rotas usadas pelo Ferris, não uma implementação completa da API
+OpenAI. O endereço do LM Studio é usado separadamente para modelos e conversa.
+
+Para configurar por terminal no PC do ESP32, antes do primeiro uso:
 
 ```bash
-python -m ferris.server --voice-url http://IP_DA_OUTRA_MAQUINA:8770/v1
+export LM_STUDIO_URL=http://192.168.15.17:1234/v1
+export LM_STUDIO_MODEL=google/gemma-4-12b-qat
+export FERRIS_VOICE_URL=http://192.168.15.17:8770/v1
+python -m ferris.server
 ```
 
-Sem essa opção nada muda e a voz continua local. Com ela, o painel passa a oferecer
-apenas a voz Qwen, porque é a única que o worker sintetiza. Defina `FERRIS_VOICE_TOKEN`
-nas duas máquinas para exigir autenticação; sem token, qualquer um na rede usa o worker.
+Configurações já salvas têm prioridade sobre essas variáveis. Também existe
+`--voice-url http://192.168.15.17:8770/v1` para sobrescrever o destino na inicialização.
+A `.env.example` documenta as variáveis, mas não é carregada automaticamente.
+Defina `FERRIS_VOICE_TOKEN` no worker e salve o mesmo token no campo de voz do painel
+para exigir autenticação; esse token é separado da chave do LM Studio. Sem token,
+o worker aceita clientes da rede.
+
+Confira os serviços a partir do PC do ESP32 (inclua `Authorization: Bearer …` se
+configurou autenticação):
+
+```bash
+curl --connect-timeout 5 http://192.168.15.17:1234/v1/models
+curl --connect-timeout 5 http://192.168.15.17:8770/health
+```
+
+Se houver timeout, confira se o PC está acordado, na mesma rede e se o firewall permite
+1234 e 8770. O LM Studio precisa aceitar conexões de rede, e o worker precisa escutar
+em `0.0.0.0`. Para executar voz localmente de novo, deixe o endereço do worker vazio e
+instale `.[voice,tts]` e seus modelos neste PC; `setup_tts.py` habilita as vozes rápidas.
 
 ### Desempenho da síntese
 

@@ -9,6 +9,7 @@ import math
 import os
 import re
 import secrets
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -29,18 +30,19 @@ MAX_BODY = 1_000_000
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, data, token='', device_token='', whisper='', model_dir=None, header=None, serial_port='', voice_url='', voice_token=''):
+    def __init__(self, address, data, token='', device_token='', whisper='', model_dir=None, header=None, serial_port='', voice_url=None, voice_token=None):
         self.data = Path(data)
         self.settings = Settings(self.data)
         self.assistant = Assistant(self.settings)
         local_whisper = self.data/'whisper'/'small'
-        if voice_url:
-            # Whisper e Qwen3-TTS rodam em outra máquina; veja tools/voice_worker.py.
-            self.transcriber = RemoteTranscriber(voice_url, voice_token)
-            self.speech = RemoteSpeech(voice_url, voice_token)
-        else:
-            self.transcriber = Transcriber(whisper or (str(local_whisper) if (local_whisper/'model.bin').is_file() else ''))
-            self.speech = Speech(self.data/'tts/supertonic-3')
+        self.whisper = whisper or (str(local_whisper) if (local_whisper/'model.bin').is_file() else '')
+        self.voice_lock = threading.RLock()
+        self.voice_config = None
+        if voice_url is not None:
+            self.settings.values['voice_url'] = voice_url
+        if voice_token is not None:
+            self.settings.values['voice_token'] = voice_token
+        self.configure_voice()
         self.detector = Detector(model_dir)
         self.device = Device(serial_port, self.assistant)
         export_header = header or (Path(model_dir)/'model_weights.h' if model_dir else None)
@@ -49,6 +51,21 @@ class Server(ThreadingHTTPServer):
         self.device_token = device_token
         super().__init__(address, Handler)
         self.device.start()
+
+    def configure_voice(self):
+        with self.voice_lock:
+            config = self.settings.get()
+            key = (config['voice_url'], config['voice_token'])
+            if key == self.voice_config:
+                return
+            if key[0]:
+                transcriber, speech = RemoteTranscriber(*key), RemoteSpeech(*key)
+            else:
+                transcriber, speech = Transcriber(self.whisper), Speech(self.data/'tts/supertonic-3')
+            if self.voice_config is not None:
+                self.speech.cancel()
+            self.transcriber, self.speech = transcriber, speech
+            self.voice_config = key
 
     def server_close(self):
         self.device.stop()
@@ -133,11 +150,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == '/api/status':
                 counts = {label: len(list((self.server.data/'recordings'/label).glob('*/*.wav'))) for label in ('ferris', 'other', 'noise')}
+                speech = self.server.speech.status()
+                remote = speech.get('remote', False)
+                transcription_ready = speech.get('transcription_ready', bool(self.server.transcriber.path))
                 self.reply(dict(settings=self.server.settings.public(), greeting=greeting(self.server.settings.get()),
-                                recordings=counts, local_voice=bool(self.server.transcriber.path),
+                                recordings=counts, local_voice=not remote and transcription_ready,
+                                transcription={'remote': remote, 'ready': transcription_ready,
+                                               'url': speech.get('url', ''), 'error': speech.get('error', '')},
                                 recording_sessions=len({p.parent.name for p in (self.server.data/'recordings').glob('*/*/*.wav')}),
                                 training=self.server.training.status(), device=self.server.device.status(),
-                                hardware=self.server.assistant.hardware_state(), speech=self.server.speech.status(), wake_model=self.server.detector.ready))
+                                hardware=self.server.assistant.hardware_state(), speech=speech, wake_model=self.server.detector.ready))
             elif path == '/api/training':
                 self.reply(self.server.training.status())
             elif path == '/api/models':
@@ -182,7 +204,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/train':
                 self.reply(self.server.training.start(data.get('split_mode'), data.get('flash', False)), 202)
             elif path == '/api/settings':
-                self.reply(self.server.settings.update(data))
+                with self.server.voice_lock:
+                    settings = self.server.settings.update(data)
+                    self.server.configure_voice()
+                self.reply(settings)
             elif path == '/api/chat':
                 text = data.get('text', '')
                 session = self.session(data)
@@ -275,7 +300,7 @@ def main():
     parser.add_argument('--models', type=Path, default=None, help='Diretório dos modelos ONNX')
     parser.add_argument('--serial-port', default=os.getenv('FERRIS_SERIAL_PORT', discover_port()),
                         help='Porta USB do ESP32; vazio desabilita USB e mantém Wi-Fi')
-    parser.add_argument('--voice-url', default=os.getenv('FERRIS_VOICE_URL', ''),
+    parser.add_argument('--voice-url', default=None,
                         help='Worker de voz remoto, por exemplo http://192.168.15.17:8770/v1')
     args = parser.parse_args()
     token = os.getenv('FERRIS_TOKEN', '')
@@ -283,7 +308,7 @@ def main():
         parser.error('Para servir na rede, configure FERRIS_TOKEN com pelo menos 24 caracteres.')
     with Server((args.host, args.port), args.data, token, os.getenv('FERRIS_DEVICE_TOKEN', ''),
                 os.getenv('FERRIS_WHISPER_MODEL', ''), model_dir=args.models, serial_port=args.serial_port,
-                voice_url=args.voice_url, voice_token=os.getenv('FERRIS_VOICE_TOKEN', '')) as server:
+                voice_url=args.voice_url) as server:
         print(f'Ferris em http://{args.host}:{server.server_port} — Ctrl+C para encerrar', flush=True)
         try:
             server.serve_forever()

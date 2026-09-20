@@ -237,8 +237,8 @@ async function toggleListen() {
     } else {
       const info = await api('/api/status');
       if (turn !== generation) return;
-      if ($('voice-mode').value === 'local' && (!info.wake_model || !info.local_voice)) throw new Error('O modo local precisa do detector ONNX treinado e de um modelo Whisper configurado. Você já pode gravar exemplos em Minha voz.');
-      if (!info.local_voice) throw new Error('Configure o Whisper neste PC para transcrever suas perguntas.');
+      if ($('voice-mode').value === 'local' && (!info.wake_model || !info.transcription?.ready)) throw new Error('O modo local precisa do detector ONNX treinado e de um modelo Whisper configurado. Você já pode gravar exemplos em Minha voz.');
+      if (!info.transcription?.ready) throw new Error('Whisper indisponível. Confira o serviço de voz em Conexão.');
       const opened = new Capture(); capture = opened; await opened.start(processLocal);
       if (turn !== generation || capture !== opened) { opened.stop(); return; }
       enabled = true;
@@ -278,10 +278,19 @@ async function refresh() {
   $('model-state').textContent = info.wake_model ? 'Detector ONNX disponível. Valide com áudios de uma nova sessão.' : 'Modelo pessoal ainda não treinado. Comece reunindo seus exemplos.';
   if (!trainingChoice) $('training-mode').value = info.recording_sessions >= 4 ? 'sessions' : 'recordings';
   renderTraining(info.training);
-  $('whisper-state').textContent = info.local_voice ? 'Whisper local configurado: suas perguntas são transcritas neste PC.' : 'Whisper ainda não configurado neste PC.';
+  const location = info.transcription?.remote ? `no PC de destino (${info.transcription.url})` : 'neste PC';
+  $('whisper-state').textContent = info.transcription?.ready ? `Whisper disponível ${location}.` : `Whisper indisponível ${location}. ${info.transcription?.error || 'Confira os modelos no serviço de voz.'}`;
+  $('voice-mode').options[0].textContent = 'ESP32 + Whisper ' + (info.transcription?.remote ? 'remoto' : 'neste PC');
+  $('voice-choice').replaceChildren(...(info.speech?.voices || ['ferris']).map(voice => {
+    const option = document.createElement('option'); option.value = voice;
+    option.textContent = voice === 'ferris' ? 'Ferris · expressivo' : `Rápida · voz ${voice.slice(1)}`;
+    return option;
+  }));
+  try { const saved = localStorage.getItem('ferris-voice-v2'); if (info.speech?.voices.includes(saved)) $('voice-choice').value = saved; } catch (_) {}
+  updateVoiceNote();
   $('voice-cost').hidden = $('voice-choice').value !== 'ferris';
   $('voice-cost').textContent = 'Voz expressiva Qwen. A espera depende de onde a síntese roda. ' + (info.speech?.designed_preview_ready ? 'A prévia já está pronta para ouvir.' : 'A primeira prévia também precisa ser gerada.');
-  $('speech-voice').textContent = info.speech?.ready ? `${info.speech.engine} · Português · Local` : 'Voz brasileira ainda não configurada';
+  $('speech-voice').textContent = info.speech?.ready ? `${info.speech.engine} · Português · ${info.speech.remote ? 'PC de destino' : 'Neste PC'}` : `Voz indisponível. ${info.speech?.error || 'Confira os modelos no serviço de voz.'}`;
   $('device-state').textContent = info.device?.connected ? 'ESP32 conectado por USB. Eventos por Wi-Fi também são aceitos quando configurados.' : 'USB não conectado. O modo Wi-Fi continua disponível quando configurado.';
   $('flash-esp32').disabled = !info.device?.available || info.training?.state === 'running';
   return info;
@@ -336,17 +345,18 @@ $('train-model').onclick = async () => {
 async function openSettings() {
   try {
     const {settings: s} = await refresh();
-    $('name').value = s.name; $('base-url').value = s.base_url; $('model').value = s.model; $('timezone').value = s.timezone;
+    $('name').value = s.name; $('base-url').value = s.base_url; $('model').value = s.model; $('timezone').value = s.timezone; $('voice-url').value = s.voice_url || '';
   } catch (e) { $('connection-result').textContent = e.message; }
   $('settings').showModal();
 }
 async function saveSettings() {
   accessToken = $('access-token').value.trim();
   const data = Object.fromEntries(new FormData($('settings-form')));
-  for (const [id, key] of [['api-key', 'api_key'], ['search-key', 'search_key']]) {
+  for (const [id, key] of [['api-key', 'api_key'], ['search-key', 'search_key'], ['voice-token', 'voice_token']]) {
     if ($(id).value || $('clear-keys').checked) data[key] = $('clear-keys').checked ? '' : $(id).value;
   }
-  await api('/api/settings', data); $('api-key').value = ''; $('search-key').value = ''; $('clear-keys').checked = false;
+  await stopAll();
+  await api('/api/settings', data); $('api-key').value = ''; $('search-key').value = ''; $('voice-token').value = ''; $('clear-keys').checked = false;
   return data;
 }
 $('open-settings').onclick = openSettings;
@@ -359,16 +369,24 @@ $('test-connection').onclick = async () => {
   try {
     await saveSettings(); const {models} = await api('/api/models'); $('model-list').replaceChildren();
     models.forEach(id => { const o = document.createElement('option'); o.value = id; $('model-list').append(o); });
-    if (!$('model').value && models.length) $('model').value = models.find(id => id === 'ferris-gemma') || models.find(id => /gemma/i.test(id)) || models[0];
+    if (!models.includes($('model').value) && models.length) $('model').value = models.find(id => id === 'ferris-gemma') || models.find(id => /gemma/i.test(id)) || models[0];
     $('connection-result').textContent = models.length ? `${models.length} modelo(s) disponível(is). Escolha e salve.` : 'Servidor conectado, mas sem modelos disponíveis.';
     $('connection-dot').classList.toggle('on', models.length > 0);
   } catch (e) { $('connection-result').textContent = e.message; $('connection-dot').classList.remove('on'); }
   finally { $('test-connection').disabled = false; }
 };
 $('listen').onclick = toggleListen; $('wake').onclick = () => wake(); $('stop').onclick = stopAll;
-$('voice-mode').onchange = () => {
-  stopListening();
-  $('voice-note').textContent = {esp: 'Diga “Ferris” antes de cada pergunta. A placa detecta o nome; este PC transcreve e responde.', local: 'Teste do detector ONNX e transcrição Whisper neste PC. Nenhum áudio vai ao LM Studio.', browser: 'No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.'}[$('voice-mode').value];
+function updateVoiceNote() {
+  $('voice-note').textContent = {esp: 'Diga “Ferris” antes de cada pergunta. A placa detecta o nome. A pergunta usa o microfone do navegador e segue ao Whisper configurado.', local: 'Teste do detector ONNX neste PC. A transcrição usa o Whisper configurado em Conexão; somente texto vai ao LM Studio.', browser: 'No modo navegador, o serviço de voz pode processar áudio online. A ativação por “Ferris” aqui é provisória, por transcrição.'}[$('voice-mode').value];
+}
+$('voice-mode').onchange = () => { stopListening(); updateVoiceNote(); };
+$('test-voice-connection').onclick = async () => {
+  $('test-voice-connection').disabled = true; $('voice-connection-result').textContent = 'Verificando…';
+  try {
+    await saveSettings(); const info = await refresh();
+    $('voice-connection-result').textContent = `Whisper: ${info.transcription?.ready ? 'disponível' : 'indisponível'}. Voz: ${info.speech?.ready ? 'disponível' : 'indisponível'}. ${info.speech?.error || ''}`;
+  } catch (e) { $('voice-connection-result').textContent = e.message; }
+  finally { $('test-voice-connection').disabled = false; }
 };
 $('chat-form').onsubmit = (e) => { e.preventDefault(); if (busy) return; const text = $('message').value.trim(); if (text) { $('message').value = ''; ask(text, $('search').checked); } };
 $('message').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('chat-form').requestSubmit(); } };

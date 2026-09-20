@@ -9,12 +9,11 @@
   <div class="creature" id="creature" aria-hidden="true"><svg viewBox="0 0 360 260" fill="none"><g stroke="#283e47" stroke-width="9" stroke-linecap="round"><path d="M95 174 53 196 36 226M106 195 79 220 75 242M265 174 307 196 324 226M254 195 281 220 285 242"/><path d="M97 147 53 130 37 94M263 147 307 130 323 94"/></g><path d="M30 109C9 88 7 51 26 35L39 65 60 40C82 70 60 105 42 113Z" fill="#ef8b65"/><path d="M330 109C351 88 353 51 334 35L321 65 300 40C278 70 300 105 318 113Z" fill="#ef8b65"/><path d="M78 162C78 99 119 86 180 86S282 99 282 162C282 209 238 230 180 230S78 209 78 162Z" fill="#ef8b65"/><path d="M128 103 122 73M232 103 238 73" stroke="#ef8b65" stroke-width="18" stroke-linecap="round"/><g class="eyes" fill="#283e47"><ellipse cx="121" cy="65" rx="12" ry="17"/><ellipse cx="239" cy="65" rx="12" ry="17"/></g><path d="M158 168Q180 190 202 168" stroke="#283e47" stroke-width="7" stroke-linecap="round"/><ellipse cx="120" cy="163" rx="15" ry="8" fill="#f9b397"/><ellipse cx="240" cy="163" rx="15" ry="8" fill="#f9b397"/></svg></div>
   <div class="listen-state"><span class="dot" id="mic-dot"></span><span id="state" role="status">Pronto quando você estiver.</span></div>
   <button class="primary" id="listen">Ativar microfone</button>
-  <p class="fine" id="voice-cost">Voz expressiva Qwen. Com o worker remoto a espera cai bastante; a prévia fica em cache.</p>
-  <div class="voice-options"><label for="voice-mode">Reconhecimento</label><select id="voice-mode"><option value="esp">ESP32 + Whisper neste PC</option><option value="local">Testar detector e Whisper no PC</option><option value="browser">Voz do navegador</option></select></div>
-  <p class="fine" id="voice-note">Diga “Ferris” antes de cada pergunta. A placa detecta o nome; este PC transcreve e responde.</p>
+  <div class="voice-options"><label for="voice-mode">Reconhecimento</label><select id="voice-mode"><option value="esp">ESP32 + Whisper</option><option value="local">Testar detector neste PC + Whisper</option><option value="browser">Voz do navegador</option></select></div>
+  <p class="fine" id="voice-note">Diga “Ferris” antes de cada pergunta. A placa detecta o nome; a pergunta é transcrita pelo Whisper configurado.</p>
   <div class="small-controls"><button class="quiet" id="wake">Chamar Ferris</button><button class="quiet" id="stop">Parar</button><label><input type="checkbox" id="spoken" checked> Ler respostas</label></div>
   <div class="small-controls"><span class="fine" id="speech-voice">Voz brasileira no PC de destino</span><button class="quiet" id="test-voice">Testar voz</button></div>
-  <p class="fine" id="voice-cost">Voz expressiva Qwen. Com o worker remoto a espera cai bastante; a prévia fica em cache.</p>
+  <p class="fine" id="voice-cost">Voz expressiva Qwen. O tempo de geração depende do PC que executa a síntese.</p>
   <div class="voice-options"><label for="voice-choice">Voz masculina</label><select id="voice-choice"><option value="ferris">Ferris · expressivo</option></select></div>
  </section>
  <section class="workspace">
@@ -53,11 +52,16 @@
 </main>
 <footer><span>Uma pequena companhia. Uma conversa de cada vez.</span><span id="latency"></span></footer>
 <div id="notice" role="alert" hidden></div>
-<dialog id="settings"><form id="settings-form"><div class="dialog-heading"><h2>Conectar o Ferris</h2><button type="button" id="close-settings" class="quiet" aria-label="Fechar">✕</button></div><p>Use o Gemma no LM Studio deste PC. Ligue o servidor local, busque os modelos e salve sua escolha. Também é possível conectar um servidor na sua rede.</p>
+<dialog id="settings"><form id="settings-form"><div class="dialog-heading"><h2>Conectar o Ferris</h2><button type="button" id="close-settings" class="quiet" aria-label="Fechar">✕</button></div><p>Conecte o modelo de conversa no LM Studio e o serviço de Whisper e voz. Eles podem rodar em outro PC da sua rede.</p>
  <label class="field">Seu nome<input name="name" id="name" maxlength="60" value="Ian" required></label>
- <label class="field">Endereço do LM Studio<input name="base_url" id="base-url" type="url" placeholder="http://127.0.0.1:1234/v1" required></label>
+ <label class="field">Endereço do LM Studio<input name="base_url" id="base-url" type="url" placeholder="http://192.168.15.17:1234/v1" required></label>
  <label class="field">Chave do LM Studio (se exigida)<input id="api-key" type="password" autocomplete="off" placeholder="Deixe vazio para manter a chave salva"></label>
  <div class="field"><label for="model">Modelo</label><div class="model-input"><input name="model" id="model" list="model-list" placeholder="Identificador do modelo"><datalist id="model-list"></datalist><button id="test-connection" type="button" class="quiet">Buscar modelos</button></div></div>
+ <label class="field">Serviço de Whisper e voz<input name="voice_url" id="voice-url" type="url" placeholder="http://192.168.15.17:8770/v1"></label>
+ <p class="fine">Use a porta do worker de voz (8770). Vazio usa os modelos instalados neste PC. Salvar aplica a mudança imediatamente.</p>
+ <label class="field">Token do serviço de voz<input id="voice-token" type="password" autocomplete="off" placeholder="Vazio mantém o token salvo"></label>
+ <button id="test-voice-connection" type="button" class="quiet">Verificar Whisper e voz</button>
+ <p id="voice-connection-result" role="status"></p>
  <label class="field">Fuso horário<input name="timezone" id="timezone" value="America/Sao_Paulo" required></label>
  <details><summary>Pesquisa Google e acesso pela rede</summary><label class="field">Chave SerpApi para pesquisa Google<input id="search-key" type="password" autocomplete="off" placeholder="Opcional; vazio mantém a chave salva"></label><label><input id="clear-keys" type="checkbox"> Remover as chaves salvas</label><label class="field">Token de acesso a este Ferris<input id="access-token" type="password" autocomplete="off"></label><p class="fine">O token do Ferris é usado somente nesta aba. Sem SerpApi, a pesquisa oferece um link para o Google.</p></details>
  <p id="connection-result" role="status"></p><button type="submit" class="primary">Salvar conexão</button>

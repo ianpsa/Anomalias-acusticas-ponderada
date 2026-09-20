@@ -27,6 +27,7 @@ class DesignedSpeech:
         self.folder = Path(folder)
         self.pipe = None
         self.cancel_event = threading.Event()
+        self.load_lock = threading.Lock()
 
     @property
     def ready(self):
@@ -46,17 +47,17 @@ class DesignedSpeech:
         primeira chamada; fazer isso em várias threads ao mesmo tempo quebra com
         ImportError. Aqui tudo acontece uma vez, na thread que chamou.
         """
-        if self.pipe is None:
-            from .vendor.qwen_onnx import Pipeline
-            self.pipe = Pipeline(str(self.folder/'cpu_int4'), str(self.folder))
-        from transformers import AutoTokenizer  # noqa: F401  (resolve o atributo preguiçoso)
-        self.pipe._ids('ok')
+        with self.load_lock:
+            if self.pipe is None:
+                from .vendor.qwen_onnx import Pipeline
+                pipe = Pipeline(str(self.folder/'cpu_int4'), str(self.folder))
+                pipe._ids('ok')
+                self.pipe = pipe
 
     def warm(self):
         """Carrega o modelo antecipadamente; o primeiro pedido não espera."""
         if self.ready:
             self._ensure_pipe()
-            self.pipe.check_cancelled = lambda: None
 
     def synthesize(self, text):
         path = self.cache_path(text)

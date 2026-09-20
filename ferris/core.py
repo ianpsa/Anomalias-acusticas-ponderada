@@ -68,6 +68,7 @@ class Settings:
         self.path = root / 'settings.json'
         self.values = dict(base_url=os.getenv('LM_STUDIO_URL', 'http://127.0.0.1:1234/v1'),
                            model=os.getenv('LM_STUDIO_MODEL', ''), api_key=os.getenv('LM_STUDIO_KEY', ''),
+                           voice_url=os.getenv('FERRIS_VOICE_URL', ''), voice_token=os.getenv('FERRIS_VOICE_TOKEN', ''),
                            search_key=os.getenv('SERPAPI_KEY', ''), name='Ian', timezone='America/Sao_Paulo')
         if self.path.exists():
             self.values.update(json.loads(self.path.read_text()))
@@ -78,7 +79,8 @@ class Settings:
 
     def public(self):
         v = self.get()
-        return {**{k: v[k] for k in ('base_url', 'model', 'name', 'timezone')},
+        return {**{k: v[k] for k in ('base_url', 'model', 'name', 'timezone', 'voice_url')},
+                'has_voice_token': bool(v['voice_token']),
                 'has_api_key': bool(v['api_key']), 'has_search_key': bool(v['search_key'])}
 
     def update(self, data):
@@ -90,6 +92,7 @@ class Settings:
                         raise UserError('Configuração inválida.')
                     v[key] = data[key].strip()
             v['base_url'] = checked_url(v['base_url'])
+            v['voice_url'] = checked_url(v['voice_url']) if v['voice_url'] else ''
             if not v['name'] or len(v['name']) > 60:
                 raise UserError('Informe um nome de até 60 caracteres.')
             try:

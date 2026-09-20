@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler,HTTPServer
 import json
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args): pass
- def do_GET(self): self.send({'data':[{'id':'text-embedding-model'},{'id':'ferris-gemma'}]})
+ def do_GET(self): self.send({'ok':True,'stt':True,'tts':True,'preview_ready':False} if self.path=='/health' else {'data':[{'id':'text-embedding-model'},{'id':'ferris-gemma'}]})
  def do_POST(self):
   data=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
   assert data['model']=='ferris-gemma'
@@ -78,6 +78,11 @@ s.serve_forever()
   await until('document.getElementById("settings").open');
   await evaluate(`document.getElementById('base-url').value=${JSON.stringify(fixture)}; document.getElementById('test-connection').click()`);
   await until('document.getElementById("model").value === "ferris-gemma"');
+  await evaluate(`document.getElementById('voice-url').value=${JSON.stringify(fixture)}; document.getElementById('test-voice-connection').click()`);
+  await until('document.getElementById("voice-connection-result").textContent.includes("Whisper: disponível. Voz: disponível.")');
+  assert.match(await evaluate('document.getElementById("whisper-state").textContent'), /PC de destino/);
+  assert.equal(await evaluate('document.querySelectorAll("#voice-cost").length'), 1);
+  assert.equal(await evaluate('document.getElementById("voice-choice").options.length'), 1);
   await evaluate('document.getElementById("settings-form").requestSubmit()');
   await until('!document.getElementById("settings").open');
   await evaluate('document.getElementById("message").value="Olá, Ferris"; document.getElementById("chat-form").requestSubmit()');
@@ -182,6 +187,7 @@ for label,hz in [('ferris',900),('other',2400),('noise',3000)]:
   await call('Page.reload'); await until('document.readyState === "complete"');
   assert.equal(await evaluate('document.getElementById("voice-choice").value'), 'ferris');
   await until('document.getElementById("model-state").textContent.includes("Detector ativo")');
+  await evaluate("api('/api/settings', {voice_url:''})");
   await evaluate('document.getElementById("voice-mode").value="local"; document.getElementById("listen").click()');
   await until('document.getElementById("notice").textContent.includes("detector ONNX treinado")');
   await evaluate('document.getElementById("tab-chat").click()');
