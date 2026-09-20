@@ -16,8 +16,8 @@
 
 ```sh
 cp .env.example .env  # só na primeira vez
-# Se sua porta não for ttyUSB0, ajuste FERRIS_SERIAL_PORT no .env.
-echo "FERRIS_SERIAL_GID=$(stat -c '%g' /dev/ttyUSB0)" >> .env
+# Se sua porta não for ttyUSB0, ajuste SERIAL_PORT no .env.
+echo "SERIAL_GID=$(stat -c '%g' /dev/ttyUSB0)" >> .env
 docker compose up -d --build ferris
 ```
 
@@ -171,14 +171,14 @@ PYTHON_BIN=.venv/bin/python node tools/testing/browser_smoke.mjs
 | O que aconteceu | O que conferir |
 | --- | --- |
 | Porta 8765 ou 8770 ocupada | Pare o processo Python antigo ou ajuste a porta no `.env` |
-| USB não encontrado | Confira `FERRIS_SERIAL_PORT`; sem placa, use apenas `compose.yaml` |
-| Permissão negada no USB | Confira `FERRIS_SERIAL_GID` com `stat -c '%g' /dev/ttyUSB0` e recrie o container |
-| Permissão negada em `data/` ou `models/` | No Linux, ajuste `FERRIS_UID` e `FERRIS_GID` para os valores de `id -u` e `id -g` |
+| USB não encontrado | Confira `SERIAL_PORT`; sem placa, use apenas `compose.yaml` |
+| Permissão negada no USB | Confira `SERIAL_GID` com `stat -c '%g' /dev/ttyUSB0` e recrie o container |
+| Permissão negada em `data/` ou `models/` | No Linux, ajuste `USER_ID` e `GROUP_ID` para os valores de `id -u` e `id -g` |
 | Whisper ou voz indisponível | Veja `docker compose logs -f voice` no destino; confirme IP, porta e token no painel |
 | Timeout nos dois serviços remotos | Confira se o destino está acordado e se o firewall permite 1234 e 8770 |
 | Modelo aparece com outro nome | Use **Buscar modelos** e salve o identificador que o LM Studio devolveu |
 
-&emsp; Se quiser exigir autenticação no worker, defina `FERRIS_VOICE_TOKEN` no `.env` do destino e salve o mesmo valor no campo de voz do painel. É separado da chave do LM Studio. O painel é publicado somente em `127.0.0.1`; o worker precisa ficar acessível pela rede para o outro PC conseguir chamar.
+&emsp; Se quiser exigir autenticação no worker, defina `VOICE_TOKEN` no `.env` do destino e salve o mesmo valor no campo de voz do painel. É separado da chave do LM Studio. O painel é publicado somente em `127.0.0.1`; o worker precisa ficar acessível pela rede para o outro PC conseguir chamar.
 
 ### Referências
 

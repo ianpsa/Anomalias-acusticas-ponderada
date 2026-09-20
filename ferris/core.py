@@ -66,10 +66,10 @@ class Settings:
         self.root = root
         self.lock = threading.RLock()
         self.path = root / 'settings.json'
-        self.values = dict(base_url=os.getenv('LM_STUDIO_URL', 'http://127.0.0.1:1234/v1'),
-                           model=os.getenv('LM_STUDIO_MODEL', ''), api_key=os.getenv('LM_STUDIO_KEY', ''),
-                           voice_url=os.getenv('FERRIS_VOICE_URL', ''), voice_token=os.getenv('FERRIS_VOICE_TOKEN', ''),
-                           search_key=os.getenv('SERPAPI_KEY', ''), name='Ian', timezone='America/Sao_Paulo')
+        self.values = dict(base_url=os.getenv('AI_PROCESSOR_URL', 'http://127.0.0.1:1234/v1'),
+                           model=os.getenv('AI_PROCESSOR_MODEL', ''), api_key=os.getenv('AI_PROCESSOR_KEY', ''),
+                           voice_url=os.getenv('VOICE_URL', ''), voice_token=os.getenv('VOICE_TOKEN', ''),
+                           search_key=os.getenv('SEARCH_KEY', ''), name='Ian', timezone='America/Sao_Paulo')
         if self.path.exists():
             self.values.update(json.loads(self.path.read_text()))
 

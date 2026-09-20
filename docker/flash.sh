@@ -12,6 +12,6 @@ tar -C /source --exclude=build --exclude=managed_components --exclude=data \
 cp /models/model_weights.h main/model_weights.h
 case "${1:-flash}" in
   build) idf.py build ;;
-  flash) idf.py -p "${FERRIS_FLASH_PORT}" -b 460800 flash ;;
+  flash) idf.py -p "${FLASH_PORT}" -b 460800 flash ;;
   *) echo 'Use build ou flash.' >&2; exit 1 ;;
 esac

@@ -7,19 +7,20 @@ services:
       target: ferris
     init: true
     restart: unless-stopped
-    user: "${FERRIS_UID:-1000}:${FERRIS_GID:-1000}"
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     ports:
-      - "127.0.0.1:${FERRIS_PORT:-8765}:8765"
+      - "127.0.0.1:${PANEL_PORT:-8765}:8765"
     environment:
-      LM_STUDIO_URL: ${LM_STUDIO_URL:-http://192.168.15.17:1234/v1}
-      LM_STUDIO_MODEL: ${LM_STUDIO_MODEL:-google/gemma-4-12b-qat}
-      LM_STUDIO_KEY: ${LM_STUDIO_KEY:-}
-      FERRIS_VOICE_URL: ${FERRIS_VOICE_URL:-http://192.168.15.17:8770/v1}
-      FERRIS_VOICE_TOKEN: ${FERRIS_VOICE_TOKEN:-}
-      FERRIS_TOKEN: ${FERRIS_TOKEN:-}
-      FERRIS_DEVICE_TOKEN: ${FERRIS_DEVICE_TOKEN:-}
-      SERPAPI_KEY: ${SERPAPI_KEY:-}
-      FERRIS_FLASH_ENABLED: "0"
+      PANEL_PORT: "8765"
+      AI_PROCESSOR_URL: ${AI_PROCESSOR_URL:-http://192.168.15.17:1234/v1}
+      AI_PROCESSOR_MODEL: ${AI_PROCESSOR_MODEL:-google/gemma-4-12b-qat}
+      AI_PROCESSOR_KEY: ${AI_PROCESSOR_KEY:-}
+      VOICE_URL: ${VOICE_URL:-http://192.168.15.17:8770/v1}
+      VOICE_TOKEN: ${VOICE_TOKEN:-}
+      PANEL_TOKEN: ${PANEL_TOKEN:-}
+      DEVICE_TOKEN: ${DEVICE_TOKEN:-}
+      SEARCH_KEY: ${SEARCH_KEY:-}
+      FLASH_ENABLED: "0"
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -38,13 +39,15 @@ services:
       target: voice
     init: true
     restart: unless-stopped
-    user: "${FERRIS_UID:-1000}:${FERRIS_GID:-1000}"
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     ports:
-      - "${FERRIS_VOICE_BIND:-0.0.0.0}:${FERRIS_VOICE_PORT:-8770}:8770"
+      - "${VOICE_BIND:-0.0.0.0}:${VOICE_PORT:-8770}:8770"
     environment:
-      FERRIS_VOICE_TOKEN: ${FERRIS_VOICE_TOKEN:-}
-      QWEN_INTRA_THREADS: ${QWEN_INTRA_THREADS:-4}
-      FERRIS_TTS_SENTENCE_CHUNKS: ${FERRIS_TTS_SENTENCE_CHUNKS:-0}
+      VOICE_PORT: "8770"
+      VOICE_BIND: 0.0.0.0
+      VOICE_TOKEN: ${VOICE_TOKEN:-}
+      VOICE_THREADS: ${VOICE_THREADS:-4}
+      VOICE_SPLIT_SENTENCES: ${VOICE_SPLIT_SENTENCES:-0}
     volumes:
       - ./data:/app/data
     healthcheck:
@@ -56,14 +59,14 @@ services:
   firmware:
     profiles: [tools]
     image: espressif/idf:v5.4.2
-    user: "${FERRIS_UID:-1000}:${FERRIS_GID:-1000}"
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     environment:
       HOME: /tmp
-      FERRIS_FLASH_PORT: /dev/ttyUSB0
+      FLASH_PORT: /dev/ttyUSB0
     devices:
-      - "${FERRIS_SERIAL_PORT:-/dev/ttyUSB0}:/dev/ttyUSB0"
+      - "${SERIAL_PORT:-/dev/ttyUSB0}:/dev/ttyUSB0"
     group_add:
-      - "${FERRIS_SERIAL_GID:-0}"
+      - "${SERIAL_GID:-0}"
     volumes:
       - ./firmware:/source:ro
       - ./models:/models:ro

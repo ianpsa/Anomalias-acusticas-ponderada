@@ -151,7 +151,7 @@ class Worker(ThreadingHTTPServer):
 
     def __init__(self, address, data, token=''):
         super().__init__(address, Handler)
-        whisper = os.environ.get('FERRIS_WHISPER_MODEL') or str(data/'whisper'/'small')
+        whisper = os.environ.get('WHISPER_MODEL') or str(data/'whisper'/'small')
         self.transcriber = Transcriber(whisper if (Path(whisper)/'model.bin').is_file() else '')
         self.speech = Speech(data/'tts'/'supertonic-3')
         self.token = token
@@ -160,19 +160,19 @@ class Worker(ThreadingHTTPServer):
 def main():
     root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', default='0.0.0.0')
-    parser.add_argument('--port', type=int, default=8770)
+    parser.add_argument('--host', default=os.environ.get('VOICE_BIND', '0.0.0.0'))
+    parser.add_argument('--port', type=int, default=int(os.environ.get('VOICE_PORT', '8770')))
     parser.add_argument('--data', type=Path, default=root/'data')
     args = parser.parse_args()
 
-    token = os.environ.get('FERRIS_VOICE_TOKEN', '')
+    token = os.environ.get('VOICE_TOKEN', '')
     worker = Worker((args.host, args.port), args.data, token)
     if not worker.transcriber.path:
         print('Aviso: Whisper ausente. Execute tools/models/setup_whisper.py.', file=sys.stderr)
     if not worker.speech.designed.ready:
         print('Aviso: voz Qwen ausente. Execute tools/models/setup_designed_tts.py.', file=sys.stderr)
     if not token and args.host != '127.0.0.1':
-        print('Aviso: sem FERRIS_VOICE_TOKEN, qualquer máquina da rede pode usar este worker.', file=sys.stderr)
+        print('Aviso: sem VOICE_TOKEN, qualquer máquina da rede pode usar este worker.', file=sys.stderr)
     if worker.speech.designed.ready:
         # Aquecer em segundo plano: a porta abre na hora e o primeiro pedido não
         # paga o carregamento das sessões ONNX nem a construção do tokenizer.
