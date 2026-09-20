@@ -4,6 +4,7 @@
 # Changes: only voice-design inference; local tokenizer; bounded CPU threads;
 # omit unused encoders/talker; cancellation/deadline checks. No auto downloads.
 import json
+import os
 import sys
 from pathlib import Path
 import numpy as np
@@ -49,7 +50,7 @@ class Pipeline:
         self.root = Path(model_path)
         self.manifest = json.loads((self.root / 'manifest.json').read_text())
         sm = self.manifest['sub_models']
-        prov = self.manifest.get('execution_provider', 'CPUExecutionProvider')
+        prov = os.environ.get('QWEN_EP') or self.manifest.get('execution_provider', 'CPUExecutionProvider')
         avail = ort.get_available_providers()
         if prov not in avail:
             print(f'  [warn] manifest EP {prov} unavailable; falling back to CPU', file=sys.stderr)
@@ -57,8 +58,9 @@ class Pipeline:
         self.provider = prov
         so = ort.SessionOptions()
         so.log_severity_level = 3
-        so.intra_op_num_threads = 4
-        so.inter_op_num_threads = 1
+        # Ferris: ajustável para calibrar por máquina; os padrões são os originais.
+        so.intra_op_num_threads = int(os.environ.get('QWEN_INTRA_THREADS', '4'))
+        so.inter_op_num_threads = int(os.environ.get('QWEN_INTER_THREADS', '1'))
 
         def sess(name):
             if name not in sm:

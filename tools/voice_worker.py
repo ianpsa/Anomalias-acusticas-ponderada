@@ -11,6 +11,7 @@ import hmac
 import json
 import os
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -142,6 +143,10 @@ def main():
         print('Aviso: voz Qwen ausente. Execute tools/setup_designed_tts.py.', file=sys.stderr)
     if not token and args.host != '127.0.0.1':
         print('Aviso: sem FERRIS_VOICE_TOKEN, qualquer máquina da rede pode usar este worker.', file=sys.stderr)
+    if worker.speech.ready:
+        # Aquecer em segundo plano: a porta abre na hora e o primeiro pedido não
+        # paga o carregamento das sessões ONNX nem a construção do tokenizer.
+        threading.Thread(target=worker.speech.warm, daemon=True).start()
     print(f'Worker de voz em http://{args.host}:{args.port}/v1', flush=True)
     try:
         worker.serve_forever()

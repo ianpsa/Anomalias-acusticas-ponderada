@@ -79,6 +79,42 @@ O serviço oferece ao modelo apenas `web_search`. Com uma chave **SerpApi** em C
 
 Ferris não tem ferramentas de terminal, edição de arquivos ou execução de código, e o cliente orienta o modelo a recusar programação. O filtro de texto não garante que um LLM jamais produza código; a ausência de ferramentas executáveis é o limite efetivo. As conversas ficam apenas em memória, separadas por aba. Áudio não é enviado ao LM Studio, somente texto.
 
+## Voz em outra máquina
+
+Whisper e a síntese Qwen são o que mais pesa, e o LM Studio não serve rotas de áudio.
+Para rodar os dois em um computador mais rápido, suba `tools/voice_worker.py` lá:
+
+```bash
+python tools/voice_worker.py --host 0.0.0.0 --port 8770
+```
+
+Ele expõe `/v1/audio/transcriptions` e `/v1/audio/speech`, no mesmo formato da API
+OpenAI que o LM Studio usa para texto. No PC do ESP32, aponte o Ferris para ele:
+
+```bash
+python -m ferris.server --voice-url http://IP_DA_OUTRA_MAQUINA:8770/v1
+```
+
+Sem essa opção nada muda e a voz continua local. Com ela, o painel passa a oferecer
+apenas a voz Qwen, porque é a única que o worker sintetiza. Defina `FERRIS_VOICE_TOKEN`
+nas duas máquinas para exigir autenticação; sem token, qualquer um na rede usa o worker.
+
+### Desempenho da síntese
+
+A geração é autoregressiva e roda em CPU: por frame de áudio são um passo do talker,
+quinze chamadas ao preditor de resíduo e um embed. O custo cresce com o tamanho da
+resposta, então respostas curtas são o maior fator. O prompt já pede até 3 frases.
+
+Trechos de texto diferentes são independentes, então são gerados em paralelo, o que
+rende cerca de 1,5x em respostas longas sem mudar uma amostra do áudio. O número de
+threads por sessão ONNX sai de `QWEN_INTRA_THREADS`, padrão 4. Medido em um M3 Pro,
+com três trechos de 135 caracteres: 84,4 s em série contra 56,6 s em paralelo.
+
+`FERRIS_TTS_SENTENCE_CHUNKS=1` corta o texto por frase em vez de por comprimento, o que
+cria mais trechos para paralelizar. Rende mais em respostas de várias frases curtas, mas
+insere 200 ms de pausa entre frases e muda a prosódia, então avalie de ouvido antes de
+adotar.
+
 ## Montagem do hardware
 
 Alvo: ESP32 original (placa ESP-32U), ESP-IDF **5.4.2**, INMP441 no canal esquerdo.

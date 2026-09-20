@@ -8,7 +8,7 @@ import wave
 import numpy as np
 
 from ferris.core import UserError
-from ferris.designed_speech import DesignedSpeech
+from ferris.designed_speech import SENTENCE_CHUNKS, DesignedSpeech
 
 
 class DesignedSpeechTests(unittest.TestCase):
@@ -25,7 +25,9 @@ class DesignedSpeechTests(unittest.TestCase):
     def test_native_wav_and_persistent_cache(self):
         raw = self.voice.synthesize('Olá! Como está seu dia?')
         with wave.open(io.BytesIO(raw)) as wav:
-            self.assertEqual((wav.getframerate(),wav.getnframes()), (24000,2400))
+            # Com corte por frase o texto vira dois trechos, com 200 ms de pausa entre eles.
+            expected = 9600 if SENTENCE_CHUNKS else 2400
+            self.assertEqual((wav.getframerate(),wav.getnframes()), (24000,expected))
         # Recreating the engine should serve exactly the same voice preview offline.
         fresh = DesignedSpeech(self.temp.name)
         self.assertEqual(fresh.synthesize('Olá! Como está seu dia?'), raw)
