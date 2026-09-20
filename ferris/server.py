@@ -19,6 +19,7 @@ from .core import Assistant, Settings, UserError, greeting
 from .detector import Detector
 from .training import Training
 from .device import Device, discover_port
+from .remote_voice import RemoteSpeech, RemoteTranscriber
 from .speech import Speech
 
 STATIC = Path(__file__).parent / 'static'
@@ -28,13 +29,18 @@ MAX_BODY = 1_000_000
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, data, token='', device_token='', whisper='', model_dir=None, header=None, serial_port=''):
+    def __init__(self, address, data, token='', device_token='', whisper='', model_dir=None, header=None, serial_port='', voice_url='', voice_token=''):
         self.data = Path(data)
         self.settings = Settings(self.data)
         self.assistant = Assistant(self.settings)
         local_whisper = self.data/'whisper'/'small'
-        self.transcriber = Transcriber(whisper or (str(local_whisper) if (local_whisper/'model.bin').is_file() else ''))
-        self.speech = Speech(self.data/'tts/supertonic-3')
+        if voice_url:
+            # Whisper e Qwen3-TTS rodam em outra máquina; veja tools/voice_worker.py.
+            self.transcriber = RemoteTranscriber(voice_url, voice_token)
+            self.speech = RemoteSpeech(voice_url, voice_token)
+        else:
+            self.transcriber = Transcriber(whisper or (str(local_whisper) if (local_whisper/'model.bin').is_file() else ''))
+            self.speech = Speech(self.data/'tts/supertonic-3')
         self.detector = Detector(model_dir)
         self.device = Device(serial_port, self.assistant)
         export_header = header or (Path(model_dir)/'model_weights.h' if model_dir else None)
@@ -269,12 +275,15 @@ def main():
     parser.add_argument('--models', type=Path, default=None, help='Diretório dos modelos ONNX')
     parser.add_argument('--serial-port', default=os.getenv('FERRIS_SERIAL_PORT', discover_port()),
                         help='Porta USB do ESP32; vazio desabilita USB e mantém Wi-Fi')
+    parser.add_argument('--voice-url', default=os.getenv('FERRIS_VOICE_URL', ''),
+                        help='Worker de voz remoto, por exemplo http://192.168.15.17:8770/v1')
     args = parser.parse_args()
     token = os.getenv('FERRIS_TOKEN', '')
     if args.host not in ('127.0.0.1', 'localhost') and len(token) < 24:
         parser.error('Para servir na rede, configure FERRIS_TOKEN com pelo menos 24 caracteres.')
     with Server((args.host, args.port), args.data, token, os.getenv('FERRIS_DEVICE_TOKEN', ''),
-                os.getenv('FERRIS_WHISPER_MODEL', ''), model_dir=args.models, serial_port=args.serial_port) as server:
+                os.getenv('FERRIS_WHISPER_MODEL', ''), model_dir=args.models, serial_port=args.serial_port,
+                voice_url=args.voice_url, voice_token=os.getenv('FERRIS_VOICE_TOKEN', '')) as server:
         print(f'Ferris em http://{args.host}:{server.server_port} — Ctrl+C para encerrar', flush=True)
         try:
             server.serve_forever()

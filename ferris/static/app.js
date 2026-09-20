@@ -54,7 +54,7 @@ function speak(text, listenAfterGreeting = false, preview = false) {
   }
   return new Promise((resolve) => {
     cancelSpeech();
-    speaking = true; recognition?.abort(); state($('voice-choice').value === 'ferris' ? 'Preparando a voz expressiva… pode levar cerca de um minuto.' : 'Preparando a voz…'); $('creature').classList.add('active');
+    speaking = true; recognition?.abort(); state($('voice-choice').value === 'ferris' ? 'Preparando a voz expressiva…' : 'Preparando a voz…'); $('creature').classList.add('active');
     const speech = {id: crypto.randomUUID(), controller: new AbortController(), audio: null, url: null}; currentSpeech = speech;
     let done = false;
     const finish = (cancelled = false) => {
@@ -280,7 +280,7 @@ async function refresh() {
   renderTraining(info.training);
   $('whisper-state').textContent = info.local_voice ? 'Whisper local configurado: suas perguntas são transcritas neste PC.' : 'Whisper ainda não configurado neste PC.';
   $('voice-cost').hidden = $('voice-choice').value !== 'ferris';
-  $('voice-cost').textContent = 'Voz expressiva: pode levar cerca de um minuto por frase neste PC. ' + (info.speech?.designed_preview_ready ? 'A prévia já está pronta para ouvir.' : 'A primeira prévia também precisa ser gerada.');
+  $('voice-cost').textContent = 'Voz expressiva Qwen. A espera depende de onde a síntese roda. ' + (info.speech?.designed_preview_ready ? 'A prévia já está pronta para ouvir.' : 'A primeira prévia também precisa ser gerada.');
   $('speech-voice').textContent = info.speech?.ready ? `${info.speech.engine} · Português · Local` : 'Voz brasileira ainda não configurada';
   $('device-state').textContent = info.device?.connected ? 'ESP32 conectado por USB. Eventos por Wi-Fi também são aceitos quando configurados.' : 'USB não conectado. O modo Wi-Fi continua disponível quando configurado.';
   $('flash-esp32').disabled = !info.device?.available || info.training?.state === 'running';
@@ -314,7 +314,7 @@ async function pollTraining() {
 $('training-mode').onchange = () => { trainingChoice = true; };
 try {
   const savedVoice = localStorage.getItem('ferris-voice-v2');
-  if (['ferris','M1','M2','M3','M4','M5'].includes(savedVoice)) $('voice-choice').value = savedVoice;
+  if (savedVoice === 'ferris') $('voice-choice').value = savedVoice;
 } catch (_) { /* Storage can be unavailable in private browsing. */ }
 $('voice-choice').onchange = () => {
   $('voice-cost').hidden = $('voice-choice').value !== 'ferris';

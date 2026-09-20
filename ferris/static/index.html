@@ -9,13 +9,13 @@
   <div class="creature" id="creature" aria-hidden="true"><svg viewBox="0 0 360 260" fill="none"><g stroke="#283e47" stroke-width="9" stroke-linecap="round"><path d="M95 174 53 196 36 226M106 195 79 220 75 242M265 174 307 196 324 226M254 195 281 220 285 242"/><path d="M97 147 53 130 37 94M263 147 307 130 323 94"/></g><path d="M30 109C9 88 7 51 26 35L39 65 60 40C82 70 60 105 42 113Z" fill="#ef8b65"/><path d="M330 109C351 88 353 51 334 35L321 65 300 40C278 70 300 105 318 113Z" fill="#ef8b65"/><path d="M78 162C78 99 119 86 180 86S282 99 282 162C282 209 238 230 180 230S78 209 78 162Z" fill="#ef8b65"/><path d="M128 103 122 73M232 103 238 73" stroke="#ef8b65" stroke-width="18" stroke-linecap="round"/><g class="eyes" fill="#283e47"><ellipse cx="121" cy="65" rx="12" ry="17"/><ellipse cx="239" cy="65" rx="12" ry="17"/></g><path d="M158 168Q180 190 202 168" stroke="#283e47" stroke-width="7" stroke-linecap="round"/><ellipse cx="120" cy="163" rx="15" ry="8" fill="#f9b397"/><ellipse cx="240" cy="163" rx="15" ry="8" fill="#f9b397"/></svg></div>
   <div class="listen-state"><span class="dot" id="mic-dot"></span><span id="state" role="status">Pronto quando você estiver.</span></div>
   <button class="primary" id="listen">Ativar microfone</button>
-  <p class="fine" id="voice-cost">Voz expressiva: cerca de 50 s para gerar uma frase curta neste PC. A prévia já está pronta.</p>
+  <p class="fine" id="voice-cost">Voz expressiva Qwen. Com o worker remoto a espera cai bastante; a prévia fica em cache.</p>
   <div class="voice-options"><label for="voice-mode">Reconhecimento</label><select id="voice-mode"><option value="esp">ESP32 + Whisper neste PC</option><option value="local">Testar detector e Whisper no PC</option><option value="browser">Voz do navegador</option></select></div>
   <p class="fine" id="voice-note">Diga “Ferris” antes de cada pergunta. A placa detecta o nome; este PC transcreve e responde.</p>
   <div class="small-controls"><button class="quiet" id="wake">Chamar Ferris</button><button class="quiet" id="stop">Parar</button><label><input type="checkbox" id="spoken" checked> Ler respostas</label></div>
   <div class="small-controls"><span class="fine" id="speech-voice">Voz brasileira no PC de destino</span><button class="quiet" id="test-voice">Testar voz</button></div>
-  <p class="fine" id="voice-cost">Voz expressiva: cerca de 50 s para gerar uma frase curta neste PC. A prévia já está pronta.</p>
-  <div class="voice-options"><label for="voice-choice">Voz masculina</label><select id="voice-choice"><option value="ferris">Ferris · expressivo (mais lento)</option><option value="M1">Rápida · voz 1</option><option value="M2">Rápida · voz 2</option><option value="M3">Rápida · voz 3</option><option value="M4">Rápida · voz 4</option><option value="M5">Rápida · voz 5</option></select></div>
+  <p class="fine" id="voice-cost">Voz expressiva Qwen. Com o worker remoto a espera cai bastante; a prévia fica em cache.</p>
+  <div class="voice-options"><label for="voice-choice">Voz masculina</label><select id="voice-choice"><option value="ferris">Ferris · expressivo</option></select></div>
  </section>
  <section class="workspace">
   <nav class="tabs" aria-label="Área de trabalho"><button class="tab selected" id="tab-chat" aria-selected="true">Conversa</button><button class="tab" id="tab-voice" aria-selected="false">Minha voz</button></nav>
