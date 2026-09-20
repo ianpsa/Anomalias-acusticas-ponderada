@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 from ferris.audio import read_recording
 from ferris.core import UserError
 from ferris.detector import Features
+from tools.training import augment
 from tools.training.build_dsp import build
 
 
@@ -100,19 +101,31 @@ def train(data, output, header=None, split_mode='sessions'):
     else:
         raise ValueError('Modo de separação inválido: use sessions ou recordings.')
     frontend = Features(build()); arrays = {}
+    rng = np.random.default_rng(42)
+    # O ambiente usado nas misturas sai só do treino. Pegar ruído de validação ou
+    # de teste colocaria áudio desses conjuntos dentro do modelo.
+    ambient = [records[i]['pcm'] for i in splits['train'] if records[i]['category'] == 'noise']
+    added = {'ferris': 0, 'other': 0, 'noise': 0, 'partial_word': 0}
     for name, ids in splits.items():
         xs, ys = [], []
         for i in ids:
             r = records[i]
             for pcm in windows(r['pcm'], r['label']):
                 xs.append(frontend(pcm)); ys.append(r['label'])
-                if name == 'train' and r['label']:
-                    a = np.frombuffer(pcm, dtype='<i2')
-                    for offset in (-1600, 1600):
-                        shifted = np.zeros(16000, dtype='<i2')
-                        if offset > 0: shifted[offset:] = a[:-offset]
-                        else: shifted[:offset] = a[-offset:]
-                        xs.append(frontend(shifted.tobytes())); ys.append(1)
+                if name != 'train':
+                    continue  # validação e teste ficam com o áudio original
+                if r['label']:
+                    extras = [(item, 1) for item in augment.positive_variants(pcm, rng, ambient)]
+                    cut = augment.partial_word_negatives(pcm, rng, ambient)
+                    added['partial_word'] += len(cut)
+                    extras += [(item, 0) for item in cut]
+                elif r['category'] == 'other':
+                    extras = [(item, 0) for item in augment.speech_negative_variants(pcm, rng, ambient)]
+                else:
+                    extras = [(item, 0) for item in augment.ambient_variants(pcm, rng, ambient)]
+                added[r['category']] += len(extras)
+                for item, label in extras:
+                    xs.append(frontend(item)); ys.append(label)
         arrays[name] = (np.asarray(xs, dtype=np.float32), np.asarray(ys))
     x, y = arrays['train']; scaler = StandardScaler().fit(x)
     clf = LogisticRegression(C=.5, class_weight='balanced', max_iter=2000, random_state=42).fit(scaler.transform(x), y)
@@ -148,6 +161,7 @@ def train(data, output, header=None, split_mode='sessions'):
                     model_sha256=hashlib.sha256((output/'wake.onnx').read_bytes()).hexdigest(),
                     validation=report(vy, vp, threshold), test=report(ty, probs, threshold),
                     onnx_c_max_error=error, split_mode=split_mode, metric_unit='one_second_window',
+                    augmentation=dict(train_only=True, added_windows=added),
                     splits={name: sorted({records[i]['group'] for i in ids}) for name, ids in splits.items()},
                     split_recordings={name: [records[i]['sha256'] for i in ids] for name, ids in splits.items()},
                     recordings=[{k: str(v) if k == 'path' else v for k,v in r.items() if k != 'pcm'} for r in records],

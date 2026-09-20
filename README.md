@@ -91,6 +91,25 @@ docker compose down               # para os containers; data/ e models/ continua
 
 &emsp; O treino roda neste PC, exporta o detector ONNX e os pesos equivalentes em C. Os arquivos ficam em `models/`, e o cabeçalho que vai para a placa fica em `models/model_weights.h`. O modelo anterior continua disponível enquanto o novo treina. O resultado experimental serve para testar, não para dizer que vai funcionar igualmente bem em outro ambiente.
 
+&emsp; O aumento de dados acontece dentro do treino e só no conjunto de treino, com uma receita por classe. Ficar gerando arquivos aumentados dentro de `data/recordings` colocaria cópias quase idênticas em validação e teste, e as métricas passariam a medir o que o modelo já viu.
+
+| Classe | O que recebe | Por quê |
+|---|---|---|
+| Ferris | deslocamento curto, ganho, mistura com ambiente em SNR variável, ritmo entre 0,93x e 1,07x | distância, ruído e velocidade de fala mudam na vida real; a palavra precisa continuar inteira e reconhecível |
+| Ferris, como negativo | deslocamento longo, que deixa só um pedaço da palavra na janela | o detector tem que disparar com a palavra inteira; sem isso ele aprende a reagir ao começo e dispara antes da hora |
+| Outras palavras | o mesmo tratamento dos positivos | senão o modelo separa as classes pelo nível de ruído ou pelo volume em vez do conteúdo |
+| Ambiente | ganho numa faixa larga, soma de dois ambientes, inversão no tempo | é a classe sem palavra, então aceita mais liberdade; nada aqui pode receber fala |
+
+&emsp; O ambiente usado nas misturas sai só das gravações de treino. Pegar ruído de validação ou de teste colocaria áudio desses conjuntos dentro do modelo. O `wake.json` registra quantas janelas cada classe ganhou.
+
+&emsp; Para ouvir o que cada transformação faz, sem alterar nada:
+
+```sh
+python tools/training/augment_data.py
+```
+
+&emsp; Ele escreve exemplos em `data/augment-preview/`, que fica fora do Git.
+
 **Para gravar o modelo novo no ESP32:**
 
 ```sh
