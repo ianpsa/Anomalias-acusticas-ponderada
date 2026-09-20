@@ -11,6 +11,7 @@
 #include "driver/gpio.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
@@ -31,6 +32,24 @@ static const float ferris_bias = 0;
 
 #define CHUNK 800
 #define WIFI_READY BIT0
+
+/* Prioridade: numero maior roda primeiro. Periodo mais curto recebe prioridade
+   maior (rate monotonic). A captura e a unica com prazo firme: bloco de I2S
+   perdido nao volta. Rede e gravacao sao soft e ficam no fim da fila. */
+#define PRIO_CAPTURE   5
+#define PRIO_CONTROLS  4
+#define PRIO_FEATURES  3
+#define PRIO_DETECT    2
+#define PRIO_RECORDING 1
+#define PRIO_NETWORK   1
+
+#define CONTROLS_PERIOD_MS 10
+#define STATE_PERIOD_MS   500
+
+/* No ESP-IDF a pilha do xTaskCreate e a marca d agua sao em BYTES, e nao em
+   words como no FreeRTOS original. */
+#define TASK_COUNT 6
+static TaskHandle_t task_handles[TASK_COUNT];
 static const char *TAG = "ferris";
 static i2s_chan_handle_t rx;
 static RingbufHandle_t audio_ring;
@@ -76,9 +95,25 @@ static bool accepts_generation(uint32_t generation) {
 
 #include "recording.h"
 
+/* Menor folga de pilha entre as tarefas, em bytes. Pilha subdimensionada e a
+   causa mais comum de travamento aleatorio, entao ela e medida, nao chutada. */
+static uint32_t smallest_stack_free(void) {
+    uint32_t smallest = UINT32_MAX;
+    for (unsigned i = 0; i < TASK_COUNT; i++) {
+        if (!task_handles[i]) continue;
+        uint32_t free_bytes = uxTaskGetStackHighWaterMark(task_handles[i]);
+        if (free_bytes < smallest) smallest = free_bytes;
+    }
+    return smallest == UINT32_MAX ? 0 : smallest;
+}
+
 static void controls_task(void *arg) {
     (void)arg;
-    int64_t last_state = 0;
+    /* Tarefa periodica de CONTROLS_PERIOD_MS. xTaskDelayUntil conta a partir do
+       despertar anterior, entao o tempo gasto no laco nao empurra o periodo,
+       como aconteceria com vTaskDelay. */
+    TickType_t wake = xTaskGetTickCount();
+    unsigned until_state = 0;
     ferris_button_t button;
     ferris_button_init(&button, gpio_get_level(CONFIG_FERRIS_MUTE_BUTTON) == 0, esp_timer_get_time());
     while (1) {
@@ -87,19 +122,21 @@ static void controls_task(void *arg) {
             portENTER_CRITICAL(&stats_mux);
             ferris_listen_toggle(&listen_state);
             bool muted = listen_state.muted;
-            last_state = 0;
             portEXIT_CRITICAL(&stats_mux);
+            until_state = 0; /* o clique reporta o estado ja neste laco */
             ESP_LOGI(TAG, "{\"muted\":%s}", muted ? "true" : "false");
         }
         ferris_listen_state_t state = listening_snapshot();
-        if (!last_state || now - last_state >= 500000) {
-            char body[256]; state_body(body, sizeof(body)); printf("FERRIS_STATE %s\n", body); last_state = now;
+        if (until_state == 0) {
+            char body[256]; state_body(body, sizeof(body)); printf("FERRIS_STATE %s\n", body);
+            until_state = STATE_PERIOD_MS / CONTROLS_PERIOD_MS;
         }
+        until_state--;
         bool active = !state.muted && state.ready;
         gpio_set_level(CONFIG_FERRIS_LED_RED, !active);
         // A short dark pulse on green signals a detected keyword; red means inactive.
         gpio_set_level(CONFIG_FERRIS_LED_GREEN, active && now >= state.alert_until_us);
-        vTaskDelay(pdMS_TO_TICKS(10));
+        xTaskDelayUntil(&wake, pdMS_TO_TICKS(CONTROLS_PERIOD_MS));
     }
 }
 
@@ -185,28 +222,24 @@ static void feature_task(void *arg) {
 
 static void detect_task(void *arg) {
     (void)arg;
-    feature_item_t item; unsigned hits = 0; uint32_t previous = 0, generation = 0;
-    int64_t cooldown = 0, last_log = 0;
+    feature_item_t item;
+    ferris_wake_t wake_state; ferris_wake_init(&wake_state);
+    int64_t last_log = 0;
     while (1) {
         if (xQueueReceive(feature_queue, &item, pdMS_TO_TICKS(50)) != pdTRUE) continue;
-        if (collection_active() || !accepts_generation(item.generation)) { hits = previous = 0; cooldown = 0; continue; }
-        if (generation != item.generation) { hits = previous = 0; cooldown = 0; }
-        generation = item.generation;
+        if (collection_active() || !accepts_generation(item.generation)) { ferris_wake_reset(&wake_state); continue; }
         int64_t start = esp_timer_get_time();
-        if (previous && item.sequence != previous + 5) hits = 0;
-        previous = item.sequence;
         float score = FERRIS_MODEL_READY ? ferris_predict(item.features, ferris_weights, ferris_bias) : 0;
         int64_t end = esp_timer_get_time();
-        hits = score >= FERRIS_THRESHOLD ? hits+1 : 0;
-        if (FERRIS_MODEL_READY && hits >= 2 && end >= cooldown) {
+        bool confirmed = ferris_wake_update(&wake_state, FERRIS_MODEL_READY && score >= FERRIS_THRESHOLD,
+                                            item.generation, item.sequence, end);
+        if (confirmed) {
             portENTER_CRITICAL(&stats_mux);
-            bool accepted = ferris_listen_alert(&listen_state, generation, end);
+            bool accepted = ferris_listen_alert(&listen_state, item.generation, end);
             portEXIT_CRITICAL(&stats_mux);
-            if (!accepted) { hits = 0; continue; }
-            cooldown = end+3000000; hits = 0;
-            wake_item_t wake = {.confidence=score, .generation=generation, .capture_us=item.capture_us, .features_us=item.features_us,
+            wake_item_t wake = {.confidence=score, .generation=item.generation, .capture_us=item.capture_us, .features_us=item.features_us,
                                 .inference_us=end-start, .decision_us=end-item.completed_us};
-            if (xQueueSend(wake_queue, &wake, 0) != pdTRUE) increment(&dropped_network);
+            if (accepted && xQueueSend(wake_queue, &wake, 0) != pdTRUE) increment(&dropped_network);
         }
         if (end-last_log >= 1000000) {
             last_log=end;
@@ -214,8 +247,9 @@ static void detect_task(void *arg) {
             for (int bin = 0; bin < 10; bin++) rms_mean += item.features[bin * 15] / 10;
             uint32_t da,df,dn;
             portENTER_CRITICAL(&stats_mux); da=dropped_audio; df=dropped_features; dn=dropped_network; portEXIT_CRITICAL(&stats_mux);
-            ESP_LOGI(TAG, "{\"score\":%.4f,\"rms_mean\":%.6f,\"capture_us\":%"PRId64",\"features_us\":%"PRId64",\"inference_us\":%"PRId64",\"decision_us\":%"PRId64",\"drop_audio\":%"PRIu32",\"drop_features\":%"PRIu32",\"drop_network\":%"PRIu32"}",
-                     score,rms_mean,item.capture_us,item.features_us,end-start,end-item.completed_us,da,df,dn);
+            ESP_LOGI(TAG, "{\"score\":%.4f,\"rms_mean\":%.6f,\"capture_us\":%"PRId64",\"features_us\":%"PRId64",\"inference_us\":%"PRId64",\"decision_us\":%"PRId64",\"drop_audio\":%"PRIu32",\"drop_features\":%"PRIu32",\"drop_network\":%"PRIu32",\"stack_free_bytes\":%"PRIu32",\"heap_free_bytes\":%"PRIu32"}",
+                     score,rms_mean,item.capture_us,item.features_us,end-start,end-item.completed_us,da,df,dn,
+                     smallest_stack_free(),(uint32_t)esp_get_free_heap_size());
         }
     }
 }
@@ -313,10 +347,10 @@ void app_main(void) {
     strlcpy((char *)config.sta.password,CONFIG_FERRIS_WIFI_PASSWORD,sizeof(config.sta.password));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA)); ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA,&config));
     if (strlen(CONFIG_FERRIS_WIFI_SSID)>0) ESP_ERROR_CHECK(esp_wifi_start());
-    configASSERT(xTaskCreate(capture_task,"capture",6144,NULL,5,NULL)==pdPASS);
-    configASSERT(xTaskCreate(controls_task,"controls",3072,NULL,4,NULL)==pdPASS);
-    configASSERT(xTaskCreate(feature_task,"features",12288,NULL,3,NULL)==pdPASS);
-    configASSERT(xTaskCreate(detect_task,"detect",4096,NULL,2,NULL)==pdPASS);
-    configASSERT(xTaskCreate(recording_task,"recording",4096,NULL,1,NULL)==pdPASS);
-    configASSERT(xTaskCreate(network_task,"network",6144,NULL,1,NULL)==pdPASS);
+    configASSERT(xTaskCreate(capture_task,"capture",6144,NULL,PRIO_CAPTURE,&task_handles[0])==pdPASS);
+    configASSERT(xTaskCreate(controls_task,"controls",3072,NULL,PRIO_CONTROLS,&task_handles[1])==pdPASS);
+    configASSERT(xTaskCreate(feature_task,"features",12288,NULL,PRIO_FEATURES,&task_handles[2])==pdPASS);
+    configASSERT(xTaskCreate(detect_task,"detect",4096,NULL,PRIO_DETECT,&task_handles[3])==pdPASS);
+    configASSERT(xTaskCreate(recording_task,"recording",4096,NULL,PRIO_RECORDING,&task_handles[4])==pdPASS);
+    configASSERT(xTaskCreate(network_task,"network",6144,NULL,PRIO_NETWORK,&task_handles[5])==pdPASS);
 }

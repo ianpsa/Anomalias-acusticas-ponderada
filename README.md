@@ -144,6 +144,12 @@ compose.usb.yaml    acesso opcional ao USB no Linux
 
 &emsp; No firmware, captura, controles, extração de features, detecção, gravação e envio de eventos ficam em tarefas separadas. A captura passa blocos de áudio para um ring buffer, a extração calcula RMS, centroide e MFCCs, e a detecção exige duas janelas positivas. As filas não seguram a captura esperando rede, e o mute invalida os dados antigos que ainda estavam em trânsito.
 
+&emsp; As prioridades têm nome em `main.c` e seguem período mais curto, prioridade maior. A captura é a única com prazo firme, porque bloco de I2S perdido não volta; rede e gravação são soft e ficam no fim da fila. A tarefa de controles é periódica de 10 ms e usa `xTaskDelayUntil`, que conta a partir do despertar anterior, então o tempo do laço não empurra o período.
+
+&emsp; O ciclo da palavra de ativação é uma máquina de estados em `firmware/components/ferris_controls`: ela escuta, confirma na segunda janela positiva seguida e silencia por 3 segundos para não repetir o alerta na mesma fala. Uma lacuna na sequência ou uma troca de mute recomeçam a confirmação, porque duas janelas descontínuas não são a mesma palavra. Como é C puro, ela é testada no PC junto com o debounce do botão.
+
+&emsp; O log de diagnóstico sai uma vez por segundo com as latências, os contadores de descarte, a menor folga de pilha entre as tarefas e o heap livre. No ESP-IDF esses dois valores são em bytes, e não em words como no FreeRTOS original, o que muda a leitura.
+
 ![Tarefas do Ferris no FreeRTOS](assets/rtos.svg)
 
 ---
