@@ -153,7 +153,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             data = self.body()
-            if path == '/api/device/record/cancel':
+            if path == '/api/speech/cancel':
+                request_id = data.get('request_id')
+                if not isinstance(request_id, str) or not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', request_id):
+                    raise UserError('Identificador de fala inválido.')
+                self.server.speech.cancel(request_id)
+                self.reply({'ok': True})
+            elif path == '/api/device/record/cancel':
                 self.server.device.cancel_recording()
                 self.reply({'ok': True})
             elif path == '/api/device/record':
@@ -162,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                 hardware = self.server.assistant.hardware_state()
                 if hardware['muted']:
                     raise UserError('O botão do ESP32 está em mute.')
-                raw = self.server.speech.synthesize(data.get('text'), data.get('voice', 'M1'))
+                raw = self.server.speech.synthesize(data.get('text'), data.get('voice', 'ferris'), data.get('request_id'))
                 after = self.server.assistant.hardware_state()
                 if after['muted'] or after['revision'] != hardware['revision']:
                     raise UserError('Voz descartada: o botão de mute foi acionado.')

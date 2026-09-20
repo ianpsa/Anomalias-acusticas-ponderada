@@ -73,7 +73,7 @@ s.serve_forever()
   }
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await call('Page.navigate',{url:app}); await until('document.readyState === "complete"');
-  assert.equal(await evaluate('document.getElementById("voice-choice").value'), 'M1');
+  assert.equal(await evaluate('document.getElementById("voice-choice").value'), 'ferris');
   await evaluate('document.getElementById("spoken").checked=false; document.getElementById("open-settings").click()');
   await until('document.getElementById("settings").open');
   await evaluate(`document.getElementById('base-url').value=${JSON.stringify(fixture)}; document.getElementById('test-connection').click()`);

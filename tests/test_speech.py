@@ -44,13 +44,21 @@ class SpeechTests(unittest.TestCase):
             with self.assertRaises(UserError): self.speech.synthesize('Olá', voice)
         self.engine.synthesize.assert_not_called()
         self.engine.synthesize.return_value = (np.asarray([[np.nan]]), 1)
-        with self.assertRaises(UserError): self.speech.synthesize('Olá')
+        with self.assertRaises(UserError): self.speech.synthesize('Olá', 'M1')
         self.assertFalse(self.speech.lock.locked())
         self.assertFalse(self.speech.cache)
+
+    def test_late_cancel_cannot_interrupt_a_new_request(self):
+        self.speech.request_id = 'current-request'
+        self.speech.designed.cancel = Mock()
+        self.speech.cancel('previous-request')
+        self.speech.designed.cancel.assert_not_called()
+        self.speech.cancel('current-request')
+        self.speech.designed.cancel.assert_called_once()
 
     def test_missing_profile_is_reported_before_loading(self):
         (Path(self.temp.name)/'voice_styles/M5.json').unlink()
         self.assertFalse(self.speech.status()['ready'])
         with self.assertRaisesRegex(UserError, 'setup_tts'):
-            self.speech.synthesize('Olá')
+            self.speech.synthesize('Olá', 'M1')
         self.engine.synthesize.assert_not_called()
