@@ -15,4 +15,3 @@ firmware/main/model_weights.h
 .pytest_cache/
 *.egg-info/
 .vscode/
-!models/README.md
