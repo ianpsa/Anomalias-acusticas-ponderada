@@ -22,6 +22,31 @@ int main(void) {
     assert(!ferris_button_update(&button, true, 150000));
     assert(ferris_button_update(&button, true, 180000));
 
+    /* Maquina de estados da palavra: duas janelas seguidas confirmam. */
+    ferris_wake_t wake;
+    ferris_wake_init(&wake);
+    assert(!ferris_wake_update(&wake, true, 1, 5, 1000));       /* primeira positiva */
+    assert(ferris_wake_update(&wake, true, 1, 10, 2000));       /* segunda confirma */
+    assert(!ferris_wake_update(&wake, true, 1, 15, 3000));      /* silencio de 3 s */
+    assert(!ferris_wake_update(&wake, true, 1, 20, 4000));
+    assert(ferris_wake_update(&wake, true, 1, 25, 3002000));    /* silencio vencido */
+
+    ferris_wake_init(&wake);
+    assert(!ferris_wake_update(&wake, true, 1, 5, 1000));
+    assert(!ferris_wake_update(&wake, false, 1, 10, 2000));     /* negativa corta a dupla */
+    assert(!ferris_wake_update(&wake, true, 1, 15, 3000));
+    assert(ferris_wake_update(&wake, true, 1, 20, 4000));
+
+    ferris_wake_init(&wake);
+    assert(!ferris_wake_update(&wake, true, 1, 5, 1000));
+    assert(!ferris_wake_update(&wake, true, 1, 30, 2000));      /* lacuna: recomeca */
+    assert(ferris_wake_update(&wake, true, 1, 35, 3000));
+
+    ferris_wake_init(&wake);
+    assert(!ferris_wake_update(&wake, true, 1, 5, 1000));
+    assert(!ferris_wake_update(&wake, true, 2, 10, 2000));      /* mute troca a geracao */
+    assert(ferris_wake_update(&wake, true, 2, 15, 3000));
+
     ferris_listen_state_t state;
     ferris_listen_init(&state);
     const unsigned before = state.generation;

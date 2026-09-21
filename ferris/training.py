@@ -19,7 +19,7 @@ class Training:
         self.job = {'state': 'idle', 'message': 'Pronto para treinar.'}
         self.worker = None
         self.device = device
-        self.flash_supported = os.getenv('FERRIS_FLASH_ENABLED', '1') == '1'
+        self.flash_supported = os.getenv('FLASH_ENABLED', '1') == '1'
 
     def status(self):
         with self.lock:

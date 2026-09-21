@@ -1,4 +1,13 @@
-"""Light data augmentation - mix into session directories."""
+"""Gera exemplos do aumento de dados para ouvir, sem tocar nas gravações.
+
+O aumento de verdade acontece dentro de tools/training/train_wake.py, aplicado
+apenas ao conjunto de treino. Gravar arquivos aumentados dentro de
+data/recordings colocaria cópias quase idênticas em validação e teste, e as
+métricas passariam a medir o que o modelo já viu.
+
+Use este script só para conferir de ouvido se as transformações continuam
+soando como a classe delas.
+"""
 import argparse
 import sys
 import wave
@@ -9,139 +18,66 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-AUGMENTATIONS = ["noise", "shift", "speed", "volume", "mix"]
+from tools.training import augment
+
+WINDOW = augment.WINDOW
 
 
-def read_wav(path):
-    with wave.open(str(path), "rb") as w:
-        raw = w.readframes(w.getnframes())
-    pcm = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    return pcm, w.getframerate()
+def read(path):
+    with wave.open(str(path), 'rb') as handle:
+        if handle.getnchannels() != 1 or handle.getsampwidth() != 2 or handle.getframerate() != 16000:
+            raise ValueError(f'{path}: use WAV mono, 16 bits, 16 kHz.')
+        return handle.readframes(handle.getnframes())
 
 
-def write_wav(path, pcm, rate=16000):
-    pcm_int16 = np.clip(pcm * 32767, -32768, 32767).astype(np.int16)
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(rate)
-        w.writeframes(pcm_int16.tobytes())
+def write(path, raw):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), 'wb') as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(raw)
 
 
-def add_gaussian_noise(pcm, snr_db=25):
-    signal_power = np.mean(pcm ** 2)
-    noise_power = signal_power / (10 ** (snr_db / 10))
-    noise = np.random.normal(0, np.sqrt(noise_power), len(pcm))
-    return pcm + noise
-
-
-def time_shift(pcm, max_shift=0.2):
-    shift_samples = int(np.random.uniform(-max_shift, max_shift) * 16000)
-    out = np.zeros_like(pcm)
-    if shift_samples > 0 and shift_samples < len(pcm):
-        out[shift_samples:] = pcm[:-shift_samples]
-    elif shift_samples < 0 and -shift_samples < len(pcm):
-        out[:shift_samples] = pcm[-shift_samples:]
-    else:
-        out = pcm.copy()
-    return out
-
-
-def speed_perturbation(pcm, factor_range=(0.95, 1.05)):
-    factor = np.random.uniform(*factor_range)
-    new_len = int(len(pcm) / factor)
-    indices = np.round(np.arange(new_len) * factor).astype(int)
-    indices = np.clip(indices, 0, len(pcm) - 1)
-    return pcm[indices]
-
-
-def volume_scaling(pcm, gain_range=(0.8, 1.2)):
-    return pcm * np.random.uniform(*gain_range)
-
-
-def mix_with_noise(pcm, noise_dir, snr_db=20):
-    noise_files = list(noise_dir.glob("*.wav"))
-    if not noise_files:
-        return pcm
-    noise_path = noise_files[np.random.randint(len(noise_files))]
-    with wave.open(str(noise_path), "rb") as w:
-        noise = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
-    if len(noise) != len(pcm):
-        if len(noise) > len(pcm):
-            noise = noise[:len(pcm)]
-        else:
-            noise = np.concatenate([noise] * (len(pcm) // len(noise) + 1))[:len(pcm)]
-    noise_power = np.mean(noise ** 2)
-    signal_power = np.mean(pcm ** 2)
-    scale = np.sqrt(signal_power / (noise_power * (10 ** (snr_db / 10))))
-    return pcm + noise * scale
-
-
-def apply_augmentations(pcm, aug_types, noise_dir, rate=16000):
-    augmented = pcm.copy()
-    for aug in aug_types:
-        try:
-            if aug == "noise":
-                augmented = add_gaussian_noise(augmented, np.random.choice([25, 30]))
-            elif aug == "shift":
-                augmented = time_shift(augmented)
-            elif aug == "speed":
-                augmented = speed_perturbation(augmented)
-            elif aug == "volume":
-                augmented = volume_scaling(augmented)
-            elif aug == "mix":
-                augmented = mix_with_noise(augmented, noise_dir)
-        except Exception:
-            pass
-    return np.clip(augmented, -1.0, 1.0)
+def centre(raw):
+    """Mesma janela de fala usada pelo treino."""
+    from tools.training.train_wake import windows
+    return windows(raw, True)[0]
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data", type=Path, default=ROOT / "data" / "recordings")
-    p.add_argument("--multiplier", type=int, default=4, help="Augmented copies per original")
-    args = p.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--data', type=Path, default=ROOT/'data'/'recordings')
+    parser.add_argument('--output', type=Path, default=ROOT/'data'/'augment-preview')
+    parser.add_argument('--per-class', type=int, default=2, help='Gravações por classe')
+    parser.add_argument('--seed', type=int, default=42)
+    args = parser.parse_args()
 
-    data = args.data
-    noise_dir = data / "noise"
-    manifest = {"categories": {}}
-
-    total_augmented = 0
-    for cat in ["ferris", "other", "noise"]:
-        cat_dir = data / cat
-        sessions = [d for d in cat_dir.iterdir() if d.is_dir()]
-        cat_count = 0
-        print(f"\n=== {cat}: {len(sessions)} sessions ===")
-        for session in sessions:
-            wav_files = sorted(session.glob("*.wav"))
-            if not wav_files:
-                continue
-            print(f"  {session.name}: {len(wav_files)} files")
-            for wav_path in wav_files:
-                try:
-                    pcm, rate = read_wav(wav_path)
-                except Exception:
-                    continue
-                for i in range(args.multiplier):
-                    aug_types = np.random.choice(
-                        AUGMENTATIONS, size=np.random.randint(1, 4), replace=False
-                    ).tolist()
-                    aug_pcm = apply_augmentations(pcm, aug_types, noise_dir, rate)
-                    stem = wav_path.stem
-                    aug_name = f"{stem}_aug{i+1}_{'+'.join(aug_types)}.wav"
-                    write_wav(session / aug_name, aug_pcm, rate)
-                    cat_count += 1
-        manifest["categories"][cat] = {"files": cat_count, "sessions": len(sessions)}
-        total_augmented += cat_count
-        print(f"  -> {cat_count} augmented files")
-
-    manifest["total_augmented"] = total_augmented
-    manifest["multiplier"] = args.multiplier
-    manifest["augmentations"] = AUGMENTATIONS
-    (data.parent / "augmented_manifest.json").write_text(__import__("json").dumps(manifest, indent=2))
-    print(f"\nTotal augmented: {total_augmented}")
-    print(f"Grand total files: {sum(1 for _ in (data/'ferris').glob('*/*.wav')) + sum(1 for _ in (data/'other').glob('*/*.wav')) + sum(1 for _ in (data/'noise').glob('*/*.wav'))}")
+    ambient = [read(p) for p in sorted((args.data/'noise').glob('*/*.wav'))]
+    if not ambient:
+        print('Sem gravações de ambiente: as misturas vão sair sem fundo.', file=sys.stderr)
+    rng = np.random.default_rng(args.seed)
+    total = 0
+    for category in ('ferris', 'other', 'noise'):
+        paths = sorted((args.data/category).glob('*/*.wav'))[:args.per_class]
+        if not paths:
+            print(f'{category}: nenhuma gravação.', file=sys.stderr)
+            continue
+        for path in paths:
+            window = centre(read(path))
+            write(args.output/category/f'{path.stem}-original.wav', window)
+            if category == 'ferris':
+                groups = [('positivo', augment.positive_variants(window, rng, ambient))]
+            elif category == 'other':
+                groups = [('negativo', augment.speech_negative_variants(window, rng, ambient))]
+            else:
+                groups = [('ambiente', augment.ambient_variants(window, rng, ambient))]
+            for kind, items in groups:
+                for index, item in enumerate(items, 1):
+                    write(args.output/category/f'{path.stem}-{kind}-{index}.wav', item)
+                    total += 1
+    print(f'{total} exemplos em {args.output}. As gravações originais não foram alteradas.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

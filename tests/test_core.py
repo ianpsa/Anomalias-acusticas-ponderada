@@ -12,7 +12,7 @@ from urllib import error, request
 
 from ferris.audio import read_wav
 from ferris.core import Assistant, Settings, UserError, checked_url, greeting
-from ferris.server import Server
+from ferris.server import Server, question_settings
 
 
 class CoreTests(unittest.TestCase):
@@ -23,6 +23,14 @@ class CoreTests(unittest.TestCase):
         self.assistant = Assistant(self.settings)
 
     def tearDown(self): self.temp.cleanup()
+
+    def test_question_settings_bound_audio_duration_and_reject_invalid_numbers(self):
+        with patch.dict('os.environ', {'MIC_THRESHOLD':'nan', 'QUESTION_SILENCE_MS':'bad',
+                                       'QUESTION_MAX_SECONDS':'200'}):
+            self.assertEqual(question_settings(),dict(threshold=.003,silence_ms=1000,max_seconds=14))
+        with patch.dict('os.environ', {'MIC_THRESHOLD':'.002', 'QUESTION_SILENCE_MS':'1500',
+                                       'QUESTION_MAX_SECONDS':'10'}):
+            self.assertEqual(question_settings(),dict(threshold=.002,silence_ms=1500,max_seconds=10))
 
     def test_time_greeting_and_midnight(self):
         for hour, expected in [(8,'Bom dia'),(15,'Boa tarde'),(20,'Boa noite'),(1,'madrugada')]:

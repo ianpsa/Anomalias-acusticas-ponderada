@@ -61,6 +61,12 @@ class TrainingTests(unittest.TestCase):
                 wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(16000); wav.writeframes(b'\0'*32000)
             self.assertIn('confidence',restarted.detect(buf.getvalue()))
             broken=model/'runs/broken'; shutil.copytree(detector.folder,broken)
+            metadata=json.loads((broken/'wake.json').read_text())
+            metadata['dsp_sha256']='outdated'
+            (broken/'wake.json').write_text(json.dumps(metadata))
+            with self.assertRaisesRegex(UserError,'extrator'): detector.activate(broken,header)
+            self.assertEqual((model/'active.json').read_bytes(),pointer)
+            (broken/'wake.json').write_bytes((detector.folder/'wake.json').read_bytes())
             (broken/'wake.onnx').write_bytes(b'corrupt')
             with self.assertRaises(UserError): detector.activate(broken,header)
             self.assertEqual((model/'active.json').read_bytes(),pointer)

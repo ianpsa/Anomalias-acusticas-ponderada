@@ -27,6 +27,18 @@ STATIC = Path(__file__).parent / 'static'
 MAX_BODY = 1_000_000
 
 
+def question_settings():
+    def number(name, default, low, high):
+        try:
+            value = float(os.getenv(name, default))
+            return min(high, max(low, value)) if math.isfinite(value) else default
+        except ValueError:
+            return default
+    return dict(threshold=number('MIC_THRESHOLD', .003, .0001, .2),
+                silence_ms=number('QUESTION_SILENCE_MS', 1000, 400, 3000),
+                max_seconds=number('QUESTION_MAX_SECONDS', 12, 2, 14))
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -101,7 +113,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             hostname = None
         if not self.server.token and hostname not in ('localhost', '127.0.0.1', '::1'):
-            self.reply({'error': 'Acesso local apenas. Para rede, configure FERRIS_TOKEN.'}, 403)
+            self.reply({'error': 'Acesso local apenas. Para rede, configure PANEL_TOKEN.'}, 403)
             return False
         origin = self.headers.get('Origin')
         if origin and origin not in ('http://' + host, 'https://' + host):
@@ -109,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
         expected = self.server.device_token if device else self.server.token
         if device and not expected:
-            self.reply({'error': 'Configure FERRIS_DEVICE_TOKEN para conectar o ESP32.'}, 403)
+            self.reply({'error': 'Configure DEVICE_TOKEN para conectar o ESP32.'}, 403)
             return False
         if expected and not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + expected):
             self.reply({'error': 'Informe o token de acesso ao Ferris.'}, 401)
@@ -154,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                 remote = speech.get('remote', False)
                 transcription_ready = speech.get('transcription_ready', bool(self.server.transcriber.path))
                 self.reply(dict(settings=self.server.settings.public(), greeting=greeting(self.server.settings.get()),
-                                recordings=counts, local_voice=not remote and transcription_ready,
+                                recordings=counts, question=question_settings(), local_voice=not remote and transcription_ready,
                                 transcription={'remote': remote, 'ready': transcription_ready,
                                                'url': speech.get('url', ''), 'error': speech.get('error', '')},
                                 recording_sessions=len({p.parent.name for p in (self.server.data/'recordings').glob('*/*/*.wav')}),
@@ -294,24 +306,24 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description='Ferris: painel e ponte para LM Studio')
-    parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--host', default=os.getenv('PANEL_HOST', '127.0.0.1'))
     parser.add_argument('--loopback-published', action='store_true',
                         help='Docker: porta publicada somente em 127.0.0.1; mantém a verificação de Host local')
-    parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--port', type=int, default=int(os.getenv('PANEL_PORT', '8765')))
     parser.add_argument('--data', type=Path, default=Path('data'))
     parser.add_argument('--models', type=Path, default=None, help='Diretório dos modelos ONNX')
-    parser.add_argument('--serial-port', default=os.getenv('FERRIS_SERIAL_PORT', discover_port()),
+    parser.add_argument('--serial-port', default=os.getenv('SERIAL_PORT', discover_port()),
                         help='Porta USB do ESP32; vazio desabilita USB e mantém Wi-Fi')
-    parser.add_argument('--voice-url', default=None,
+    parser.add_argument('--voice-url', default=os.getenv('VOICE_URL') or None,
                         help='Worker de voz remoto, por exemplo http://192.168.15.17:8770/v1')
     args = parser.parse_args()
-    token = os.getenv('FERRIS_TOKEN', '')
+    token = os.getenv('PANEL_TOKEN', '')
     if args.host not in ('127.0.0.1', 'localhost') and len(token) < 24 and not args.loopback_published:
-        parser.error('Para servir na rede, configure FERRIS_TOKEN com pelo menos 24 caracteres.')
-    with Server((args.host, args.port), args.data, token, os.getenv('FERRIS_DEVICE_TOKEN', ''),
-                os.getenv('FERRIS_WHISPER_MODEL', ''), model_dir=args.models, serial_port=args.serial_port,
+        parser.error('Para servir na rede, configure PANEL_TOKEN com pelo menos 24 caracteres.')
+    with Server((args.host, args.port), args.data, token, os.getenv('DEVICE_TOKEN', ''),
+                os.getenv('WHISPER_MODEL', ''), model_dir=args.models, serial_port=args.serial_port,
                 voice_url=args.voice_url) as server:
-        print(f'Ferris em http://{args.host}:{server.server_port} — Ctrl+C para encerrar', flush=True)
+        print(f'Ferris em http://{args.host}:{server.server_port}: Ctrl+C para encerrar', flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

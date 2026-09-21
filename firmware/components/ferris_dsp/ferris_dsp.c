@@ -4,7 +4,36 @@
 
 #define N 256
 #define MEL 20
+#define CEPS 13
+#define HOP 160
 #define PI 3.14159265358979323846f
+
+/* Pre-enfase classica antes da FFT: compensa a queda de cerca de 6 dB por
+   oitava da voz e realca as formantes que separam "Ferris" de "ferias". O RMS
+   continua sendo medido sem ela, para seguir sendo energia e nao espectro. */
+#define PREEMPHASIS .97f
+
+static float hann[N];
+static float dct[CEPS][MEL];
+static int edges[MEL + 2];
+static int tables_ready;
+
+/* Construidas na primeira chamada. Antes elas eram refeitas a cada janela, o que
+   custava cerca de 26 mil cosf por segundo de audio. Duas chamadas simultaneas
+   escreveriam os mesmos valores, entao a corrida e inofensiva. */
+static void build_tables(void) {
+    for (int i = 0; i < N; i++) hann[i] = .5f - .5f * cosf(2 * PI * i / (N - 1));
+    float melmax = 2595 * log10f(1 + 8000.f / 700);
+    for (int i = 0; i < MEL + 2; i++) {
+        float hz = 700 * (powf(10, melmax * i / (MEL + 1) / 2595) - 1);
+        edges[i] = (int)floorf((N + 1) * hz / 16000);
+        if (edges[i] > N / 2) edges[i] = N / 2;
+    }
+    for (int c = 0; c < CEPS; c++)
+        for (int m = 0; m < MEL; m++)
+            dct[c][m] = cosf(PI * c * (m + .5f) / MEL) / MEL;
+    tables_ready = 1;
+}
 
 static void fft(float *re, float *im) {
     for (unsigned i = 1, j = 0; i < N; i++) {
@@ -28,22 +57,27 @@ static void fft(float *re, float *im) {
 }
 
 void ferris_features(const int16_t *pcm, float *out) {
-    float window[N], re[N], im[N], power[N / 2 + 1], mel[MEL];
-    int edges[MEL + 2], counts[10] = {0};
+    float re[N], im[N], power[N / 2 + 1], mel[MEL];
+    int counts[10] = {0};
+    if (!tables_ready) build_tables();
     memset(out, 0, sizeof(float) * FERRIS_FEATURES);
-    for (int i = 0; i < N; i++) window[i] = .5f - .5f * cosf(2 * PI * i / (N - 1));
-    float melmax = 2595 * log10f(1 + 8000.f / 700);
-    for (int i = 0; i < MEL + 2; i++) {
-        float hz = 700 * (powf(10, melmax * i / (MEL + 1) / 2595) - 1);
-        edges[i] = (int)floorf((N + 1) * hz / 16000);
-        if (edges[i] > N / 2) edges[i] = N / 2;
-    }
-    const int frames = (FERRIS_SAMPLES - N) / 160 + 1;
+    /* Retirar a media do bloco elimina o offset do INMP441, que entrava inteiro
+       no RMS e puxava o centroide para baixo. Em bloco fixo isso e um passa-altas
+       exato, sem estado entre janelas e sem buffer extra. A soma vai em int32
+       porque 16000 amostras de 16 bits nao cabem na mantissa de um float. */
+    int32_t offset = 0;
+    for (int i = 0; i < FERRIS_SAMPLES; i++) offset += pcm[i];
+    const float dc = (float)offset / FERRIS_SAMPLES;
+    const int frames = (FERRIS_SAMPLES - N) / HOP + 1;
     for (int frame = 0; frame < frames; frame++) {
         float energy = 0;
         for (int i = 0; i < N; i++) {
-            float x = pcm[frame * 160 + i] / 32768.f;
-            energy += x * x; re[i] = x * window[i]; im[i] = 0;
+            const int n = frame * HOP + i;
+            const float x = (pcm[n] - dc) / 32768.f;
+            const float previous = n > 0 ? (pcm[n - 1] - dc) / 32768.f : x;
+            energy += x * x;
+            re[i] = (x - PREEMPHASIS * previous) * hann[i];
+            im[i] = 0;
         }
         fft(re, im);
         float total = 0, centroid = 0;
@@ -62,10 +96,10 @@ void ferris_features(const int16_t *pcm, float *out) {
         int bin = frame * 10 / frames; counts[bin]++;
         out[bin*15] += sqrtf(energy / N);
         out[bin*15+1] += total > 1e-10f ? centroid / total / 8000 : 0;
-        for (int c = 0; c < 13; c++) {
+        for (int c = 0; c < CEPS; c++) {
             float value = 0;
-            for (int m = 0; m < MEL; m++) value += mel[m] * cosf(PI * c * (m + .5f) / MEL);
-            out[bin*15+2+c] += value / MEL;
+            for (int m = 0; m < MEL; m++) value += mel[m] * dct[c][m];
+            out[bin*15+2+c] += value;
         }
     }
     for (int b = 0; b < 10; b++)
@@ -74,6 +108,17 @@ void ferris_features(const int16_t *pcm, float *out) {
 
 float ferris_predict(const float *features, const float *weights, float bias) {
     for (int i = 0; i < FERRIS_FEATURES; i++) bias += features[i] * weights[i];
+    if (bias >= 0) return 1 / (1 + expf(-bias));
+    float e = expf(bias); return e / (1 + e);
+}
+
+float ferris_predict_hidden(const float *features, const float *weights,
+                           const float *hidden_bias, const float *output_weights, float bias) {
+    for (int h = 0; h < FERRIS_HIDDEN; h++) {
+        float value = hidden_bias[h];
+        for (int i = 0; i < FERRIS_FEATURES; i++) value += features[i] * weights[i * FERRIS_HIDDEN + h];
+        bias += fmaxf(0, value) * output_weights[h];
+    }
     if (bias >= 0) return 1 / (1 + expf(-bias));
     float e = expf(bias); return e / (1 + e);
 }

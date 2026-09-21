@@ -38,7 +38,7 @@ class Transcriber:
     def transcribe(self, raw):
         read_wav(raw)
         if not self.path:
-            raise UserError('Para transcrição local, instale o extra voice e configure FERRIS_WHISPER_MODEL com um diretório de modelo local.')
+            raise UserError('Para transcrição local, instale o extra voice e configure WHISPER_MODEL com um diretório de modelo local.')
         if not self.lock.acquire(blocking=False):
             raise UserError('A transcrição está ocupada. Tente novamente.')
         try:

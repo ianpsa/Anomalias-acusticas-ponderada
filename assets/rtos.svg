@@ -4,7 +4,7 @@
  <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 9 4.5 0 9" fill="none" stroke="#315e68" stroke-width="1.6"/></marker></defs>
  <style>text{font-family:Arial,sans-serif;fill:#283e47}.h{font-size:26px;font-weight:bold}.sub{font-size:15px;fill:#566a72}.label{font-size:18px;font-weight:bold}.body{font-size:15px}.tiny{font-size:13px;fill:#566a72}.box{fill:#fff;stroke:#c5d5d8;stroke-width:2}.queue{fill:#e4f0ec;stroke:#357461;stroke-width:1.5}.line{fill:none;stroke:#315e68;stroke-width:2;marker-end:url(#arrow)}</style>
  <rect width="1280" height="850" rx="24" fill="#f3f8f8"/>
- <text x="40" y="48" class="h">Ferris — áudio na borda, conversa no PC</text>
+ <text x="40" y="48" class="h">Ferris: áudio na borda, conversa no PC</text>
  <text x="40" y="76" class="sub">ESP32 original · INMP441 · FreeRTOS · janelas de 1 segundo, salto de 250 ms</text>
  <rect x="30" y="102" width="1220" height="452" rx="20" fill="#dfeaec"/>
  <text x="52" y="137" class="label">ESP32: a detecção continua mesmo sem rede</text>

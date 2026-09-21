@@ -15,7 +15,7 @@ PROMPT = ('A young adult male speaking native Brazilian Portuguese. A soft, ligh
           'warm and affectionate, with a gentle smile. Playful but calm, delicate conversational intonation, '
           'natural pauses, clear pronunciation. Intimate and friendly, like a cute helpful companion. '
           'Natural human timbre, not a narrator or announcer, not theatrical, not squeaky.')
-SENTENCE_CHUNKS = os.environ.get('FERRIS_TTS_SENTENCE_CHUNKS') == '1'
+SENTENCE_CHUNKS = os.environ.get('VOICE_SPLIT_SENTENCES') == '1'
 PREVIEW = 'Oi! Que bom te ver por aqui. Como foi seu dia?'
 FILES = ('config.json', 'tokenizer_config.json', 'vocab.json', 'merges.txt', 'cpu_int4/manifest.json',
          *(f'cpu_int4/{name}.onnx' for name in ('text_embed','codec_embed','talker_cache',
@@ -78,7 +78,7 @@ class DesignedSpeech:
         if SENTENCE_CHUNKS:
             # Opcional: cortar por frase gera mais trechos, que rodam em paralelo.
             # Custa uma pausa de 200 ms entre frases e muda a prosódia, então fica
-            # atrás de FERRIS_TTS_SENTENCE_CHUNKS=1 para ser avaliado de ouvido.
+            # atrás de VOICE_SPLIT_SENTENCES=1 para ser avaliado de ouvido.
             chunks = []
             for sentence in re.findall(r'[^.!?…]+[.!?…]*', text):
                 sentence = sentence.strip()

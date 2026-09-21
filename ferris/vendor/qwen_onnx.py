@@ -50,7 +50,7 @@ class Pipeline:
         self.root = Path(model_path)
         self.manifest = json.loads((self.root / 'manifest.json').read_text())
         sm = self.manifest['sub_models']
-        prov = os.environ.get('QWEN_EP') or self.manifest.get('execution_provider', 'CPUExecutionProvider')
+        prov = os.environ.get('VOICE_BACKEND') or self.manifest.get('execution_provider', 'CPUExecutionProvider')
         avail = ort.get_available_providers()
         if prov not in avail:
             print(f'  [warn] manifest EP {prov} unavailable; falling back to CPU', file=sys.stderr)
@@ -59,8 +59,8 @@ class Pipeline:
         so = ort.SessionOptions()
         so.log_severity_level = 3
         # Ferris: ajustável para calibrar por máquina; os padrões são os originais.
-        so.intra_op_num_threads = int(os.environ.get('QWEN_INTRA_THREADS', '4'))
-        so.inter_op_num_threads = int(os.environ.get('QWEN_INTER_THREADS', '1'))
+        so.intra_op_num_threads = int(os.environ.get('VOICE_THREADS', '4'))
+        so.inter_op_num_threads = int(os.environ.get('VOICE_THREADS_INTER', '1'))
 
         def sess(name):
             if name not in sm:

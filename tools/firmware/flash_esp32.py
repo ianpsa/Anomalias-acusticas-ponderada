@@ -19,9 +19,9 @@ if __name__ == '__main__':
     container = 'ferris-flash-'+uuid.uuid4().hex
     try:
         subprocess.run(['docker','run','--rm','--name',container,'--user',f'{os.getuid()}:{os.getgid()}',
-                    '--device',str(port), '-e',f'FERRIS_FLASH_PORT={port}',
+                    '--device',str(port), '-e',f'FLASH_PORT={port}',
                     '-v',f'{ROOT / "firmware"}:/source:ro','-v',f'{build}:/workspace',
                     '-w','/workspace','espressif/idf:v5.4.2','bash','-lc',
-                        'cp -a /source/. /workspace/ && idf.py -p "$FERRIS_FLASH_PORT" -b 460800 flash'], check=True, timeout=540)
+                        'cp -a /source/. /workspace/ && idf.py -p "$FLASH_PORT" -b 460800 flash'], check=True, timeout=540)
     finally:
         subprocess.run(['docker','rm','-f',container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)

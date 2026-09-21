@@ -27,6 +27,46 @@ bool ferris_listen_alert(ferris_listen_state_t *state, uint32_t generation, int6
     return true;
 }
 
+/* A extracao publica uma janela a cada 5 blocos de audio; um salto diferente
+   disso significa bloco perdido, e duas janelas descontinuas nao confirmam. */
+#define FERRIS_WAKE_STEP 5
+#define FERRIS_WAKE_QUIET_US 3000000
+
+void ferris_wake_init(ferris_wake_t *wake) {
+    *wake = (ferris_wake_t){.phase = FERRIS_WAKE_LISTENING};
+}
+
+void ferris_wake_reset(ferris_wake_t *wake) {
+    wake->phase = FERRIS_WAKE_LISTENING;
+    wake->last_sequence = 0;
+    wake->quiet_until_us = 0;
+}
+
+bool ferris_wake_update(ferris_wake_t *wake, bool positive, uint32_t generation,
+                        uint32_t sequence, int64_t now_us) {
+    if (wake->generation != generation) {
+        ferris_wake_reset(wake);
+        wake->generation = generation;
+    } else if (wake->last_sequence && sequence != wake->last_sequence + FERRIS_WAKE_STEP) {
+        wake->phase = FERRIS_WAKE_LISTENING;
+    }
+    wake->last_sequence = sequence;
+    if (!positive) {
+        wake->phase = FERRIS_WAKE_LISTENING;
+        return false;
+    }
+    if (wake->phase == FERRIS_WAKE_LISTENING) {
+        wake->phase = FERRIS_WAKE_CONFIRMING;
+        return false;
+    }
+    /* Confirmada. O silencio seguinte evita repetir o alerta na mesma fala;
+       ate la a tarefa segue confirmada, sem precisar de uma dupla nova. */
+    if (now_us < wake->quiet_until_us) return false;
+    wake->quiet_until_us = now_us + FERRIS_WAKE_QUIET_US;
+    wake->phase = FERRIS_WAKE_LISTENING;
+    return true;
+}
+
 void ferris_button_init(ferris_button_t *button, bool pressed, int64_t now_us) {
     *button = (ferris_button_t){.candidate = pressed, .stable = pressed,
                               .armed = !pressed, .changed_us = now_us};

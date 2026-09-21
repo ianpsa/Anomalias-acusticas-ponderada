@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -66,10 +67,10 @@ class Settings:
         self.root = root
         self.lock = threading.RLock()
         self.path = root / 'settings.json'
-        self.values = dict(base_url=os.getenv('LM_STUDIO_URL', 'http://127.0.0.1:1234/v1'),
-                           model=os.getenv('LM_STUDIO_MODEL', ''), api_key=os.getenv('LM_STUDIO_KEY', ''),
-                           voice_url=os.getenv('FERRIS_VOICE_URL', ''), voice_token=os.getenv('FERRIS_VOICE_TOKEN', ''),
-                           search_key=os.getenv('SERPAPI_KEY', ''), name='Ian', timezone='America/Sao_Paulo')
+        self.values = dict(base_url=os.getenv('AI_PROCESSOR_URL', 'http://127.0.0.1:1234/v1'),
+                           model=os.getenv('AI_PROCESSOR_MODEL', ''), api_key=os.getenv('AI_PROCESSOR_KEY', ''),
+                           voice_url=os.getenv('VOICE_URL', ''), voice_token=os.getenv('VOICE_TOKEN', ''),
+                           search_key=os.getenv('SEARCH_KEY', ''), name='Ian', timezone='America/Sao_Paulo')
         if self.path.exists():
             self.values.update(json.loads(self.path.read_text()))
 
@@ -109,16 +110,50 @@ class Settings:
         return self.public()
 
 
+GREETINGS = {
+    'morning': (
+        'Bom dia!', 'Bom dia! Como posso ajudar?', 'Bom dia! O que precisa?',
+        'Bom dia! Em que posso ajudar?', 'Bom dia! Tudo bem?', 'Bom dia! Pronto.',
+        'Bom dia! O que deseja?', 'Bom dia! Às ordens.', 'Bom dia! Pode falar.',
+        'Bom dia! Como posso ser útil?'),
+    'afternoon': (
+        'Boa tarde!', 'Boa tarde! Como posso ajudar?', 'Boa tarde! O que precisa?',
+        'Boa tarde! Em que posso ajudar?', 'Boa tarde! Tudo certo?', 'Boa tarde! Pronto.',
+        'Boa tarde! O que deseja?', 'Boa tarde! Às ordens.', 'Boa tarde! Pode falar.',
+        'Boa tarde! Como posso ser útil?'),
+    'evening': (
+        'Boa noite!', 'Boa noite! Como posso ajudar?', 'Boa noite! O que precisa?',
+        'Boa noite! Em que posso ajudar?', 'Boa noite! Tudo bem?', 'Boa noite! Pronto.',
+        'Boa noite! O que deseja?', 'Boa noite! Às ordens.', 'Boa noite! Pode falar.',
+        'Boa noite! Como posso ser útil?'),
+    'late': (
+        'Olá!', 'Oi! Ainda acordado?', 'Olá! Do que precisa?', 'Oi! Como posso ajudar?',
+        'Olá! Em que posso ajudar?', 'Oi! Pode falar.', 'Olá! O que precisa?',
+        'Oi! Pronto para ajudar.', 'Olá! Como posso ser útil?', 'Oi! O que deseja?'),
+}
+
+
+_GREETING_POOLS = {}
+
+
 def greeting(settings, now=None):
     now = now or datetime.now(ZoneInfo(settings['timezone']))
-    name = settings['name']
-    if 5 <= now.hour < 12:
-        return f'Bom dia, {name}! Como está o café da manhã? Como posso ajudar?'
-    if 12 <= now.hour < 18:
-        return f'Boa tarde, {name}! Qual é a vibe de hoje?'
-    if 18 <= now.hour < 23:
-        return f'Boa noite, {name}! Como foi seu dia?'
-    return f'Olá, {name}! Por aqui já é madrugada. Do que precisa?'
+    hour = now.hour
+    if 5 <= hour < 12:
+        band = 'morning'
+    elif 12 <= hour < 18:
+        band = 'afternoon'
+    elif 18 <= hour < 23:
+        band = 'evening'
+    else:
+        band = 'late'
+    pool = _GREETING_POOLS.get(band)
+    if not pool:
+        options = list(GREETINGS[band])
+        random.shuffle(options)
+        pool = deque(options)
+        _GREETING_POOLS[band] = pool
+    return pool.popleft()
 
 
 def programming_request(text):
@@ -224,7 +259,7 @@ class Assistant:
         s = self.settings.get()
         now = datetime.now(ZoneInfo(s['timezone']))
         prompt = (f'Você é Ferris, assistente de voz de {s["name"]}. Responda em português brasileiro, '
-                  f'com calor humano e em até 3 frases curtas. Data e hora locais: {now.isoformat()}. '
+                  f'com calor humano e em até 3 frases curtas. Não use travessões. Data e hora locais: {now.isoformat()}. '
                   'Use o horário para contextualizar saudações. Não invente compromissos, clima ou feriados. '
                   'Não gere código, comandos, scripts nem instruções de programação; recuse esses pedidos brevemente. '
                   'Você não controla arquivos, terminal, compras nem dispositivos. Não afirme ter executado ações. '

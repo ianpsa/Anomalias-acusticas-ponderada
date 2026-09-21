@@ -19,7 +19,7 @@ jobs:
           node-version: '20'
       - run: python -m pip install -e '.[train]'
       - run: python -m unittest discover -s tests -v
-      - run: node tools/browser_smoke.mjs
+      - run: node tools/testing/browser_smoke.mjs
         env:
           CHROMIUM: google-chrome
           PYTHON_BIN: python
