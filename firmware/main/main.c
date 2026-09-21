@@ -229,7 +229,11 @@ static void detect_task(void *arg) {
         if (xQueueReceive(feature_queue, &item, pdMS_TO_TICKS(50)) != pdTRUE) continue;
         if (collection_active() || !accepts_generation(item.generation)) { ferris_wake_reset(&wake_state); continue; }
         int64_t start = esp_timer_get_time();
+#if defined(FERRIS_MODEL_HIDDEN) && FERRIS_MODEL_HIDDEN == FERRIS_HIDDEN
+        float score = ferris_predict_hidden(item.features, ferris_weights, ferris_hidden_bias, ferris_output_weights, ferris_bias);
+#else
         float score = FERRIS_MODEL_READY ? ferris_predict(item.features, ferris_weights, ferris_bias) : 0;
+#endif
         int64_t end = esp_timer_get_time();
         bool confirmed = ferris_wake_update(&wake_state, FERRIS_MODEL_READY && score >= FERRIS_THRESHOLD,
                                             item.generation, item.sequence, end);

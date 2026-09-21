@@ -40,13 +40,9 @@ def write(path, raw):
 
 
 def centre(raw):
-    """Mesma janela de 1 segundo que o treino usa: a região de maior energia."""
-    audio = np.frombuffer(raw, dtype='<i2')
-    if len(audio) < WINDOW:
-        audio = np.pad(audio, (0, WINDOW - len(audio)))
-    starts = range(0, len(audio) - WINDOW + 1, 800)
-    start = max(starts, key=lambda n: np.square(audio[n:n + WINDOW].astype(float)).sum())
-    return audio[start:start + WINDOW].astype('<i2').tobytes()
+    """Mesma janela de fala usada pelo treino."""
+    from tools.training.train_wake import windows
+    return windows(raw, True)[0]
 
 
 def main():
@@ -71,8 +67,7 @@ def main():
             window = centre(read(path))
             write(args.output/category/f'{path.stem}-original.wav', window)
             if category == 'ferris':
-                groups = [('positivo', augment.positive_variants(window, rng, ambient)),
-                          ('negativo-parcial', augment.partial_word_negatives(window, rng, ambient))]
+                groups = [('positivo', augment.positive_variants(window, rng, ambient))]
             elif category == 'other':
                 groups = [('negativo', augment.speech_negative_variants(window, rng, ambient))]
             else:

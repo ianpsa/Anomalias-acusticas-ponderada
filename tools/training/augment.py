@@ -1,25 +1,55 @@
 """Aumento de dados por classe, guiado pelo que cada áudio significa.
 
 As três classes não toleram as mesmas transformações. O que preserva a palavra
-"Ferris" não é o que enriquece um ruído de ambiente, e a melhor fonte de negativo
-difícil é a própria palavra cortada pela borda da janela.
+"Ferris" não é o que enriquece um ruído de ambiente. Cortes da palavra não viram
+negativos automaticamente, porque ainda podem conter o nome reconhecível.
 
 Tudo aqui trabalha sobre janelas de 1 segundo e só é aplicado ao conjunto de
 treino. Validação e teste ficam com o áudio original, senão as métricas passam a
 medir cópias do que o modelo já viu.
+
+As variações são heurísticas moderadas de volume, ritmo e ambiente. A distância
+real também muda a reverberação, portanto estes exemplos não substituem novas
+sessões gravadas no microfone da placa.
 """
 import numpy as np
 
 WINDOW = 16000
 RATE = 16000
 
+# Faixas heurísticas para volume, ritmo e filtragem.
+GAIN_FAR = -8.0
+GAIN_NEAR = 4.0
+ROOM_SNR_MIN = 5.0
+ROOM_SNR_MAX = 20.0
+SPEED_MIN = 0.93
+SPEED_MAX = 1.07
+HP_CUT = 60.0
+SKIRT = 320.0
+
 
 def _floats(raw):
-    return np.frombuffer(raw, dtype='<i2').astype(np.float32) / 32768.0
+    audio = np.frombuffer(raw, dtype='<i2').astype(np.float32) / 32768.0
+    return audio - audio.mean()
 
 
 def _bytes(audio):
-    return np.clip(audio * 32767.0, -32768, 32767).astype('<i2').tobytes()
+    # Arredonda e limita antes da conversão para PCM de 16 bits.
+    return np.rint(np.clip(audio * 32767.0, -32768.0, 32767.0)).astype('<i2').tobytes()
+
+
+def _bandlimit(audio):
+    """Atenua DC e as bordas do espectro nas variações sintéticas."""
+    spectrum = np.fft.rfft(audio)
+    freqs = np.fft.rfftfreq(len(audio), 1.0 / RATE)
+    hp = np.clip(freqs / HP_CUT, 0.0, 1.0)
+    lp = np.clip((RATE / 2 - freqs) / SKIRT, 0.0, 1.0)
+    return np.fft.irfft(spectrum * hp * lp, n=len(audio))
+
+
+def _emit(audio):
+    """Filtra a variação e converte para PCM."""
+    return _bytes(_bandlimit(np.asarray(audio, dtype=np.float32)))
 
 
 def _ambient(pool, rng):
@@ -55,8 +85,10 @@ def _speed(audio, rng, low, high):
     deixa de ser a mesma, o que envenenaria o rótulo positivo.
     """
     factor = float(rng.uniform(low, high))
+    # Amostras inteiras produziriam aliasing no topo do espectro; interpolacao
+    # linear mantém a forma da onda mais perto do que o sensor capturaria.
     index = np.clip(np.arange(int(len(audio) / factor)) * factor, 0, len(audio) - 1)
-    stretched = audio[index.astype(int)]
+    stretched = np.interp(index, np.arange(len(audio)), audio)
     if len(stretched) >= WINDOW:
         start = (len(stretched) - WINDOW) // 2
         return stretched[start:start + WINDOW]
@@ -77,35 +109,21 @@ def _shift(audio, samples, fill):
 
 
 def positive_variants(raw, rng, pool):
-    """Palavra de ativação: variar o que muda na vida real, preservar a palavra.
-
-    Distância vira ganho, ambiente vira mistura em SNR variável e ritmo de fala
-    vira uma perturbação pequena. O deslocamento é curto para a palavra continuar
-    inteira dentro da janela; deslocamento grande é negativo, não positivo.
-    """
+    """Varia posição, ganho e ritmo sem transformar a própria palavra em negativo."""
     audio = _floats(raw)
-    out = []
-    for samples in (-2400, -1200, 1200, 2400):
-        out.append(_shift(audio, samples, _ambient(pool, rng)))
-    out.append(_mix(_gain(audio, rng, -8, 4), _ambient(pool, rng), rng, 5, 20))
-    out.append(_speed(audio, rng, .93, 1.07))
-    return [_bytes(np.clip(item, -1, 1)) for item in out]
-
-
-def partial_word_negatives(raw, rng, pool):
-    """Negativo difícil: a própria palavra cortada pela borda da janela.
-
-    O detector precisa disparar com a palavra inteira, não com o começo dela. Sem
-    esses exemplos ele aprende a reagir ao ataque de "Fe" e dispara antes da hora.
-    O deslocamento aqui é grande o bastante para sobrar só um pedaço, bem separado
-    do deslocamento curto usado nos positivos.
-    """
-    audio = _floats(raw)
-    out = []
-    for direction in (-1, 1):
-        samples = int(direction * rng.integers(8000, 11200))
-        out.append(_shift(audio, samples, _ambient(pool, rng)))
-    return [_bytes(np.clip(item, -1, 1)) for item in out]
+    energy = float(np.sum((audio - audio.mean()) ** 2))
+    out = [audio]
+    for samples in (-3200, -2000, -1000, 1000, 2000, 3200):
+        kept = audio[:WINDOW-samples] if samples > 0 else audio[-samples:]
+        if energy and np.sum((kept-audio.mean()) ** 2) >= .90 * energy:
+            out.append(_shift(audio, samples, np.zeros(WINDOW, dtype=np.float32)))
+    variants = []
+    for item in out:
+        variants.append(_emit(item))
+        variants.append(_emit(_gain(item, rng, -12, 6)))
+        variants.append(_emit(_mix(_gain(item, rng, -8, 2), _ambient(pool, rng), rng, 12, 30)))
+    variants.append(_emit(_speed(audio, rng, SPEED_MIN, SPEED_MAX)))
+    return variants
 
 
 def speech_negative_variants(raw, rng, pool):
@@ -116,11 +134,11 @@ def speech_negative_variants(raw, rng, pool):
     """
     audio = _floats(raw)
     out = [
-        _mix(_gain(audio, rng, -8, 4), _ambient(pool, rng), rng, 5, 20),
-        _speed(audio, rng, .93, 1.07),
-        _shift(audio, int(rng.integers(-3200, 3200)), _ambient(pool, rng)),
+        _mix(_gain(audio, rng, GAIN_FAR, GAIN_NEAR), _ambient(pool, rng), rng, ROOM_SNR_MIN, ROOM_SNR_MAX),
+        _speed(audio, rng, SPEED_MIN, SPEED_MAX),
+        _shift(audio, int(rng.integers(-3200, 3200)), np.zeros(WINDOW, dtype=np.float32)),
     ]
-    return [_bytes(np.clip(item, -1, 1)) for item in out]
+    return [_emit(item) for item in out]
 
 
 def ambient_variants(raw, rng, pool):
@@ -137,4 +155,4 @@ def ambient_variants(raw, rng, pool):
         audio + _ambient(pool, rng) * float(rng.uniform(.3, 1.0)),
         _gain(audio[::-1].copy(), rng, -6, 3),
     ]
-    return [_bytes(np.clip(item, -1, 1)) for item in out]
+    return [_emit(item) for item in out]

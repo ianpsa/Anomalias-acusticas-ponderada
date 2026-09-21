@@ -27,6 +27,18 @@ STATIC = Path(__file__).parent / 'static'
 MAX_BODY = 1_000_000
 
 
+def question_settings():
+    def number(name, default, low, high):
+        try:
+            value = float(os.getenv(name, default))
+            return min(high, max(low, value)) if math.isfinite(value) else default
+        except ValueError:
+            return default
+    return dict(threshold=number('MIC_THRESHOLD', .003, .0001, .2),
+                silence_ms=number('QUESTION_SILENCE_MS', 1000, 400, 3000),
+                max_seconds=number('QUESTION_MAX_SECONDS', 12, 2, 14))
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -154,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                 remote = speech.get('remote', False)
                 transcription_ready = speech.get('transcription_ready', bool(self.server.transcriber.path))
                 self.reply(dict(settings=self.server.settings.public(), greeting=greeting(self.server.settings.get()),
-                                recordings=counts, local_voice=not remote and transcription_ready,
+                                recordings=counts, question=question_settings(), local_voice=not remote and transcription_ready,
                                 transcription={'remote': remote, 'ready': transcription_ready,
                                                'url': speech.get('url', ''), 'error': speech.get('error', '')},
                                 recording_sessions=len({p.parent.name for p in (self.server.data/'recordings').glob('*/*/*.wav')}),

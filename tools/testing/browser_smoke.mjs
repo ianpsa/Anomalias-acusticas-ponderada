@@ -31,7 +31,12 @@ class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args): pass
  def do_GET(self): self.send({'ok':True,'stt':True,'tts':True,'preview_ready':False} if self.path=='/health' else {'data':[{'id':'text-embedding-model'},{'id':'ferris-gemma'}]})
  def do_POST(self):
-  data=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+  raw=self.rfile.read(int(self.headers['Content-Length']))
+  if self.path.endswith('/audio/transcriptions'):
+   assert raw.startswith(b'RIFF') and len(raw)>32000
+   self.send({'text':'Como está o dia?'})
+   return
+  data=json.loads(raw)
   assert data['model']=='ferris-gemma'
   self.send({'choices':[{'message':{'content':'Olá Ian, esta é uma resposta de teste do servidor remoto.'}}]})
  def send(self,value):
@@ -95,26 +100,65 @@ s.serve_forever()
   // Every wake grants one question, with or without spoken responses.
   const oneQuestionPerWake = await evaluate(`(async () => {
     const originalApi = api, originalFetch = window.fetch, OriginalAudio = window.Audio;
-    let transcriptions = 0, fail = false;
+    let transcriptions = 0, chats = 0, fail = false, delayed = false, release;
     api = async (path, ...args) => {
-      if (path === '/api/transcribe') { transcriptions++; if (fail) throw Error('STT failure'); return {text:'Como está o dia?'}; }
+      if (path === '/api/transcribe') {
+        transcriptions++;
+        if (fail) throw Error('STT failure');
+        if (delayed) return new Promise(resolve => { release = resolve; });
+      }
+      if (path === '/api/chat') chats++;
       return originalApi(path, ...args);
     };
     window.fetch = (url, options) => url === '/api/speech' ? Promise.resolve(new Response(new Blob(['test'], {type:'audio/wav'}))) : originalFetch(url, options);
     window.Audio = class { play() { queueMicrotask(() => this.onended?.()); return Promise.resolve(); } pause() {} removeAttribute() {} load() {} };
-    const speakQuestion = async () => { await processLocal(new Float32Array(800).fill(.1)); silenceSince = Date.now() - 1000; await processLocal(new Float32Array(800)); };
+    const feed = async (count, speech = false) => {
+      for (let n = 0; n < count; n++) {
+        // Quiet speech, below the old .015 threshold, with DC offset.
+        const chunk = Float32Array.from({length:800}, (_, i) => .01 + (speech ? .006 * Math.sin(i*.15) : 0));
+        await processLocal(chunk);
+      }
+    };
+    const speakQuestion = async () => {
+      await feed(8, true);
+      const before = transcriptions;
+      await feed(10); // Half a second is only a pause.
+      if (transcriptions !== before) throw Error('Question cut at a short pause');
+      await feed(8, true);
+      await feed(20); // One second finishes the question.
+    };
     try {
       $('voice-mode').value = 'esp'; enabled = true; hardwareMuted = false; closeQuestion();
       for (const spoken of [false, true]) {
         $('spoken').checked = spoken;
         await wake({id:eventId + 1, text:'Olá! Pode perguntar.'});
-        if (activeUntil <= Date.now()) return false;
+        if (activeUntil <= Date.now()) throw Error('Voice checkpoint 1: ' + JSON.stringify({transcriptions,chats,activeUntil,speechStarted,quietSamples}));
         const before = transcriptions;
         await speakQuestion();
-        if (transcriptions !== before + 1 || activeUntil !== 0) return false;
+        if (transcriptions !== before + 1 || chats !== transcriptions || activeUntil !== 0) throw Error('Voice checkpoint 2: ' + JSON.stringify({transcriptions,chats,activeUntil,speechStarted,quietSamples}));
         await speakQuestion();
-        if (transcriptions !== before + 1) return false;
+        if (transcriptions !== before + 1) throw Error('Voice checkpoint 3: ' + JSON.stringify({transcriptions,chats,activeUntil,speechStarted,quietSamples}));
       }
+      await wake({id:eventId + 1, text:'Olá!'});
+      let before = transcriptions;
+      await feed(30); // DC and silence alone never submit a question.
+      await feed(1, true); await feed(20); // A click is too short to start.
+      if (transcriptions !== before) throw Error('Voice checkpoint 4: ' + JSON.stringify({transcriptions,chats,activeUntil,speechStarted,quietSamples}));
+      await feed(8, true); activeUntil = Date.now() - 1;
+      await feed(20); // Finish a question that started before the wake timeout.
+      if (transcriptions !== before + 1) throw Error('Voice checkpoint 5: ' + JSON.stringify({transcriptions,chats,activeUntil,speechStarted,quietSamples}));
+      await wake({id:eventId + 1, text:'Olá!'});
+      before = transcriptions;
+      await feed(241, true); // Bounded duration, even without silence.
+      if (transcriptions !== before + 1) throw Error('Voice checkpoint 6: ' + JSON.stringify({transcriptions,chats,activeUntil,speechStarted,quietSamples}));
+      await wake({id:eventId + 1, text:'Olá!'});
+      await feed(8, true); delayed = true;
+      const pending = feed(20);
+      while (!release) await new Promise(resolve => setTimeout(resolve, 0));
+      const beforeCancel = chats;
+      await stopAll(); release({text:'Resposta tardia'}); await pending;
+      if (chats !== beforeCancel || activeUntil !== 0) throw Error('Voice checkpoint 7: ' + JSON.stringify({transcriptions,chats,activeUntil,speechStarted,quietSamples}));
+      delayed = false; enabled = true;
       await wake({id:eventId + 1, text:'Olá!'}); fail = true;
       await speakQuestion();
       return activeUntil === 0;
@@ -203,6 +247,6 @@ for label,hz in [('ferris',900),('other',2400),('noise',3000)]:
   const trainingMobile=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   await writeFile(path.join(temporary,'training-mobile.png'),Buffer.from(trainingMobile.data,'base64'));
   assert.deepEqual(errors,[]);
-  console.log('PASS: LM Studio, Gemma, chat, code refusal, Google fallback, PC/ESP recording selection, physical mute, late speech cancellation, training button, metrics, activation after reload, local voice prerequisites, tabs, desktop/mobile overflow, no JS errors.');
+  console.log('PASS: quiet speech, silence endpoint, one question per wake, late transcription cancellation, LM Studio, Gemma, chat, code refusal, Google fallback, PC/ESP recording selection, physical mute, late speech cancellation, training button, metrics, activation after reload, local voice prerequisites, tabs, desktop/mobile overflow, no JS errors.');
   console.log('Screenshots: '+temporary);
 } finally { for (const child of children) child.kill('SIGTERM'); }

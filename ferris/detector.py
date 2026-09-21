@@ -23,16 +23,19 @@ class Features:
         self.lib.ferris_features.restype = None
         self.lib.ferris_predict.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float), ctypes.c_float]
         self.lib.ferris_predict.restype = ctypes.c_float
+        self.lib.ferris_predict_hidden.argtypes = [ctypes.POINTER(ctypes.c_float)] * 4 + [ctypes.c_float]
+        self.lib.ferris_predict_hidden.restype = ctypes.c_float
 
     def __call__(self, pcm):
         if len(pcm) != 32000:
             raise UserError('O detector espera exatamente 1 segundo de áudio a 16 kHz.')
         import sys
-        import array
-        samples = array.array('h', pcm)
         if sys.byteorder != 'little':
+            import array
+            samples = array.array('h', pcm)
             samples.byteswap()
-        audio = (ctypes.c_int16 * 16000)(*samples)
+            pcm = samples.tobytes()
+        audio = (ctypes.c_int16 * 16000).from_buffer_copy(pcm)
         output = (ctypes.c_float * 150)()
         self.lib.ferris_features(audio, output)
         return list(output)
@@ -61,13 +64,16 @@ class Detector:
                 return None
             metadata = json.loads((self.folder/'wake.json').read_text())
             return {k: metadata.get(k) for k in ('model_sha256', 'threshold', 'split_mode',
-                                                'validation', 'test', 'limitations')}
+                                                'validation', 'test', 'personal_validation', 'personal_test', 'metric_unit', 'limitations')}
 
     @staticmethod
     def _load(folder):
         import numpy as np
         import onnxruntime as ort
         metadata = json.loads((folder/'wake.json').read_text())
+        dsp_hash = hashlib.sha256((ROOT/'firmware/components/ferris_dsp/ferris_dsp.c').read_bytes()).hexdigest()
+        if metadata.get('dsp_sha256') != dsp_hash:
+            raise UserError('O modelo usa outra versão do extrator de áudio. Treine novamente e atualize o firmware do ESP32.')
         if (metadata.get('features') != 150 or metadata.get('sample_rate') != 16000
                 or metadata.get('samples') != 16000
                 or not math.isfinite(metadata['threshold']) or not 0 <= metadata['threshold'] <= 1

@@ -21,6 +21,9 @@ services:
       DEVICE_TOKEN: ${DEVICE_TOKEN:-}
       SEARCH_KEY: ${SEARCH_KEY:-}
       FLASH_ENABLED: "0"
+      MIC_THRESHOLD: ${MIC_THRESHOLD:-0.003}
+      QUESTION_SILENCE_MS: ${QUESTION_SILENCE_MS:-1000}
+      QUESTION_MAX_SECONDS: ${QUESTION_MAX_SECONDS:-12}
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -63,6 +66,10 @@ services:
     environment:
       HOME: /tmp
       FLASH_PORT: /dev/ttyUSB0
+      FERRIS_WIFI_SSID: ${FERRIS_WIFI_SSID:-}
+      FERRIS_WIFI_PASSWORD: ${FERRIS_WIFI_PASSWORD:-}
+      FERRIS_BRIDGE_URL: ${FERRIS_BRIDGE_URL:-}
+      FERRIS_DEVICE_TOKEN: ${FERRIS_DEVICE_TOKEN:-}
     devices:
       - "${SERIAL_PORT:-/dev/ttyUSB0}:/dev/ttyUSB0"
     group_add:

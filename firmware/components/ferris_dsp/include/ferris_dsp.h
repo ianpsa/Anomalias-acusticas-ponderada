@@ -7,3 +7,7 @@
    valores, entao a corrida e inofensiva. */
 void ferris_features(const int16_t *pcm, float *features);
 float ferris_predict(const float *features, const float *weights, float bias);
+
+#define FERRIS_HIDDEN 24
+float ferris_predict_hidden(const float *features, const float *weights,
+                           const float *hidden_bias, const float *output_weights, float bias);

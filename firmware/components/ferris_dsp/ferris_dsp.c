@@ -111,3 +111,14 @@ float ferris_predict(const float *features, const float *weights, float bias) {
     if (bias >= 0) return 1 / (1 + expf(-bias));
     float e = expf(bias); return e / (1 + e);
 }
+
+float ferris_predict_hidden(const float *features, const float *weights,
+                           const float *hidden_bias, const float *output_weights, float bias) {
+    for (int h = 0; h < FERRIS_HIDDEN; h++) {
+        float value = hidden_bias[h];
+        for (int i = 0; i < FERRIS_FEATURES; i++) value += features[i] * weights[i * FERRIS_HIDDEN + h];
+        bias += fmaxf(0, value) * output_weights[h];
+    }
+    if (bias >= 0) return 1 / (1 + expf(-bias));
+    float e = expf(bias); return e / (1 + e);
+}

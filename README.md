@@ -70,7 +70,7 @@ docker compose down               # para os containers; data/ e models/ continua
 
 &emsp; Deixei a tela principal com a conversa e o microfone. **Ajustar voz e microfone** abre os testes e a escolha da voz; **Conexão** reúne os servidores e as chaves; **Minha voz** fica com as gravações e o treino. As opções que uso menos ficam recolhidas para o painel não virar um manual.
 
-&emsp; Ative o microfone no painel, em **Ajustar voz e microfone**, escolha **ESP32 + Whisper remoto** e diga "Ferris". A placa detecta o nome, ele fala a saudação e abre uma janela de 20 segundos para uma pergunta. A pergunta usa o microfone do navegador, vai para o Whisper no PC de destino e só o texto segue para o Gemma. A voz da resposta também é gerada no destino, mas toca no navegador deste PC. A placa ainda não transmite a pergunta nem reproduz a resposta.
+&emsp; Ative o microfone no painel, em **Ajustar voz e microfone**, escolha **ESP32 + Whisper remoto** e diga "Ferris". A placa detecta o nome, ele fala a saudação e abre uma janela de 20 segundos para uma pergunta. Após começar a fala, uma pausa de 1 segundo envia a pergunta automaticamente. Pausas menores mantêm a gravação, até o limite de 12 segundos. `MIC_THRESHOLD`, `QUESTION_SILENCE_MS` e `QUESTION_MAX_SECONDS` no `.env` ajustam isso. A pergunta usa o microfone do navegador, vai para o Whisper no PC de destino e só o texto segue para o Gemma. A voz da resposta também é gerada no destino, mas toca no navegador deste PC. A placa ainda não transmite a pergunta nem reproduz a resposta.
 
 &emsp; Depois disso, para perguntar de novo é só chamar "Ferris" outra vez. O botão **Parar** interrompe a resposta, e o botão físico bloqueia a escuta. Também dá para conversar por texto ou abrir **Ajustar voz e microfone** e usar **Chamar Ferris** para testar a saudação sem depender do detector.
 
@@ -89,20 +89,21 @@ docker compose down               # para os containers; data/ e models/ continua
 3. Para avaliar melhor, faça pelo menos quatro sessões mudando distância, ambiente ou momento, com positivos e negativos em cada uma.
 4. Clique em **Treinar e usar modelo**.
 
-&emsp; O treino roda neste PC, exporta o detector ONNX e os pesos equivalentes em C. Os arquivos ficam em `models/`, e o cabeçalho que vai para a placa fica em `models/model_weights.h`. O modelo anterior continua disponível enquanto o novo treina. O resultado experimental serve para testar, não para dizer que vai funcionar igualmente bem em outro ambiente.
+&emsp; O treino roda neste PC, exporta uma rede pequena com 24 neurônios intermediários em ONNX e os mesmos pesos em C para a placa. O Whisper e o Gemma continuam no PC de destino. Os arquivos ficam em `models/`, e o cabeçalho que vai para a placa fica em `models/model_weights.h`. O modelo anterior continua disponível enquanto o novo treina. O resultado experimental serve para testar, não para dizer que vai funcionar igualmente bem em outro ambiente.
 
 &emsp; O aumento de dados acontece dentro do treino e só no conjunto de treino, com uma receita por classe. Ficar gerando arquivos aumentados dentro de `data/recordings` colocaria cópias quase idênticas em validação e teste, e as métricas passariam a medir o que o modelo já viu.
 
 | Classe | O que recebe | Por quê |
 |---|---|---|
 | Ferris | deslocamento curto, ganho, mistura com ambiente em SNR variável, ritmo entre 0,93x e 1,07x | distância, ruído e velocidade de fala mudam na vida real; a palavra precisa continuar inteira e reconhecível |
-| Ferris, como negativo | deslocamento longo, que deixa só um pedaço da palavra na janela | o detector tem que disparar com a palavra inteira; sem isso ele aprende a reagir ao começo e dispara antes da hora |
 | Outras palavras | o mesmo tratamento dos positivos | senão o modelo separa as classes pelo nível de ruído ou pelo volume em vez do conteúdo |
 | Ambiente | ganho numa faixa larga, soma de dois ambientes, inversão no tempo | é a classe sem palavra, então aceita mais liberdade; nada aqui pode receber fala |
 
-&emsp; O ambiente usado nas misturas sai só das gravações de treino. Pegar ruído de validação ou de teste colocaria áudio desses conjuntos dentro do modelo. O `wake.json` registra quantas janelas cada classe ganhou.
+&emsp; O ambiente usado nas misturas sai só das gravações de treino. Pegar ruído de validação ou de teste colocaria áudio desses conjuntos dentro do modelo. O `wake.json` registra quantas janelas cada classe ganhou. Cortes da própria palavra não viram negativos, pois ainda podem conter o nome e ensinar o detector a rejeitá-lo. As variações de volume e posição preservam a maior parte da energia da fala.
 
-&emsp; Falso positivo por janela não é falso disparo. A placa só ativa com duas janelas positivas seguidas e espera 3 segundos depois de cada ativação, então o número que importa é falsa ativação por hora em áudio contínuo, medida por `tools/training/benchmark.py`, e não a taxa por janela do `wake.json`.
+&emsp; Falso positivo por janela não é falso disparo. A placa só ativa com duas janelas positivas seguidas e espera 3 segundos depois de cada ativação, então o número que importa é falsa ativação por hora em áudio contínuo, medida por `tools/training/benchmark.py`, e não a acurácia global. O treino agora escolhe o limiar na validação reproduzindo as gravações com janelas de 1 segundo, avanço de 250 ms e duas confirmações. O teste reservado usa a mesma regra; os números por gravação ainda não substituem um teste contínuo em outro ambiente.
+
+&emsp; Com muitos áudios da internet, o treino sorteia até 1.200 negativos importados por classe e mantém todos os positivos e gravações próprias da sua parte de treino. Cada gravação tem peso próprio, sem favorecer ruídos longos. Quando há áudios locais e importados, os locais recebem 70% do peso em cada classe. Validação e teste mantêm todos os arquivos reservados, e o limiar também considera os falsos acionamentos nas gravações locais. Assim o volume de downloads não torna cada treino enorme. Se as gravações próprias vierem da mesma sessão, use **Experimental** e confirme o resultado depois com áudios novos. O modelo também precisa usar a mesma versão do extrator no PC e na placa.
 
 &emsp; Para ouvir o que cada transformação faz, sem alterar nada:
 

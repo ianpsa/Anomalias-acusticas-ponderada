@@ -3,9 +3,10 @@ const $ = (id) => document.getElementById(id);
 let session = crypto.randomUUID();
 let accessToken = '', enabled = false, busy = false, speaking = false, activeUntil = 0;
 let recognition, capture, recordingCapture, currentSpeech, generation = 0, eventId = 0, polled = false;
-let detectBusy = false, hits = 0, lastDetect = 0, commandSamples = [], silenceSince = 0, speechStarted = false;
+let detectBusy = false, hits = 0, lastDetect = 0, commandSamples = [], quietSamples = 0, voicedSamples = 0, speechStarted = false;
 let hardwareMuted = false, hardwareRevision = null, collecting = false, espRecording = null;
 let trainingChoice = false, trainingPolling = false, wakeAfter = Date.now();
+let question = {threshold: 0.003, silence_ms: 1000, max_seconds: 12};
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -82,7 +83,14 @@ function speak(text, listenAfterGreeting = false, preview = false) {
         const blob = await response.blob();
         if (currentSpeech !== speech || done) return;
         speech.url = URL.createObjectURL(blob); speech.audio = new Audio(speech.url);
-        speech.audio.onended = () => finish();
+        let mediaStarted = false, mediaStopped = false;
+        speech.audio.addEventListener('play', () => { mediaStarted = true; });
+        speech.audio.addEventListener('pause', () => {
+          if (!mediaStarted || mediaStopped || done) return;
+          mediaStopped = true; console.warn('voz pausada antes do fim', speech.audio.currentTime, '/', speech.audio.duration);
+          notice(`Voz pausou aos ${speech.audio.currentTime.toFixed(1)}s de ${(speech.audio.duration || 0).toFixed(1)}s.`);
+        });
+        speech.audio.onended = () => { mediaStopped = true; finish(); };
         speech.audio.onerror = () => { notice('Não foi possível reproduzir a voz.'); finish(); };
         state('Ferris está falando…');
         await speech.audio.play();
@@ -118,7 +126,7 @@ async function ask(text, search = false) {
   }
 }
 async function wake(event) {
-  if (hardwareMuted || collecting || busy || speaking || Date.now() < activeUntil) return;
+  if (hardwareMuted || collecting || busy || speaking || speechStarted || Date.now() < activeUntil) return;
   const turn = generation; busy = true;
   try {
     const result = event || await api('/api/wake', {device: 'desktop'});
@@ -192,23 +200,31 @@ class Capture {
     if (context && context.state !== 'closed') context.close().catch(() => {});
   }
 }
-function resetCommand() { commandSamples = []; speechStarted = false; silenceSince = 0; }
+function resetCommand() { commandSamples = []; speechStarted = false; quietSamples = 0; voicedSamples = 0; }
 async function processLocal(chunk) {
   if (!enabled || busy || speaking) { resetCommand(); processLocal.ring = []; return; }
-  if (Date.now() < activeUntil) {
-    const rms = Math.sqrt(chunk.reduce((s, x) => s + x*x, 0) / chunk.length);
-    if (rms > 0.015) { speechStarted = true; silenceSince = Date.now(); }
+  if (Date.now() < activeUntil || speechStarted) {
+    const mean = chunk.reduce((s, x) => s + x, 0) / chunk.length;
+    const rms = Math.sqrt(chunk.reduce((s, x) => s + (x-mean)**2, 0) / chunk.length);
+    if (rms >= question.threshold) {
+      voicedSamples += chunk.length; quietSamples = 0;
+      if (voicedSamples >= 3200) { speechStarted = true; state('Ouvindo sua pergunta…'); }
+    } else {
+      quietSamples += chunk.length;
+      if (!speechStarted) voicedSamples = 0;
+    }
     commandSamples.push(...chunk);
     if (!speechStarted && commandSamples.length > 8000) commandSamples.splice(0, commandSamples.length - 8000);
-    if (speechStarted && (Date.now() - silenceSince > 850 || commandSamples.length >= 16000 * 12)) {
+    if (speechStarted && (quietSamples >= 16 * question.silence_ms || commandSamples.length >= 16000 * question.max_seconds)) {
       const raw = wav(commandSamples); closeQuestion(); busy = true; state('Entendendo sua voz…');
       const turn = generation;
+      const controller = new AbortController(); processLocal.controller = controller;
       try {
-        const result = await api('/api/transcribe', {audio: b64(raw)});
-        if (turn !== generation) return;
+        const result = await api('/api/transcribe', {audio: b64(raw)}, controller.signal);
+        if (turn !== generation || !enabled || controller.signal.aborted) return;
         busy = false;
         if (result.text) await ask(result.text); else { notice('Não entendi. Diga “Ferris” para tentar novamente.'); idleState(); }
-      } catch (e) { if (turn === generation) notice(e.message); }
+      } catch (e) { if (turn === generation && e.name !== 'AbortError') notice(e.message); }
       finally { if (turn === generation) { busy = false; idleState(); } }
     }
     return;
@@ -239,6 +255,7 @@ async function toggleListen() {
       if (turn !== generation) return;
       if ($('voice-mode').value === 'local' && (!info.wake_model || !info.transcription?.ready)) throw new Error('O modo local precisa do detector ONNX treinado e de um modelo Whisper configurado. Você já pode gravar exemplos em Minha voz.');
       if (!info.transcription?.ready) throw new Error('Whisper indisponível. Confira o serviço de voz em Conexão.');
+      question = info.question || question;
       const opened = new Capture(); capture = opened; await opened.start(processLocal);
       if (turn !== generation || capture !== opened) { opened.stop(); return; }
       enabled = true;
@@ -248,11 +265,11 @@ async function toggleListen() {
   finally { $('listen').disabled = hardwareMuted; }
 }
 function stopListening() {
-  enabled = false; recognition?.abort(); capture?.stop(); capture = null; closeQuestion();
+  enabled = false; processLocal.controller?.abort(); recognition?.abort(); capture?.stop(); capture = null; closeQuestion();
   resetCommand(); processLocal.ring = []; hits = 0; $('listen').textContent = 'Ativar microfone'; $('mic-dot').classList.remove('on'); idleState();
 }
 async function stopAll() {
-  generation++; ask.controller?.abort(); cancelSpeech(); stopListening(); busy = false; $('send').disabled = false;
+  generation++; ask.controller?.abort(); processLocal.controller?.abort(); cancelSpeech(); stopListening(); busy = false; $('send').disabled = false;
   recordingCapture?.stop(); recordingCapture = null;
   if (espRecording) { espRecording.abort(); espRecording = null; await api('/api/device/record/cancel', {}).catch(() => {}); }
   const previous = session; session = crypto.randomUUID();
@@ -306,7 +323,7 @@ function renderTraining(job) {
   $('train-model').textContent = running ? 'Treinando…' : 'Treinar e usar modelo';
   $('training-state').textContent = job.message;
   const model = job.model, metrics = model?.test;
-  $('training-metrics').textContent = metrics ? `${model.split_mode === 'recordings' ? 'Experimental. ' : ''}Teste reservado: ${metrics.tp} de ${metrics.tp + metrics.fn} exemplos Ferris reconhecidos; ${metrics.fp} de ${metrics.fp + metrics.tn} janelas negativas acionadas. Valide também com áudio contínuo novo.` : '';
+  $('training-metrics').textContent = metrics ? `${model.split_mode === 'recordings' ? 'Experimental. ' : ''}Teste reservado: ${metrics.tp} de ${metrics.tp + metrics.fn} exemplos Ferris reconhecidos; ${metrics.fp} de ${metrics.fp + metrics.tn} ${model.metric_unit === 'recording_two_consecutive_windows' ? 'gravações negativas acionadas' : 'janelas negativas acionadas'}. Valide também com áudio contínuo novo.` : '';
   if (model) $('model-state').textContent = 'Detector ativo para testes no PC. ' + (model.split_mode === 'recordings' ? 'Versão experimental. ' : '') + 'Pesos exportados para o ESP32.';
   if (running && !trainingPolling) pollTraining();
 }
