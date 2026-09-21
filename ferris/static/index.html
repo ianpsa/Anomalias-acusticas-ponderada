@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#dfeaec"><title>Ferris — Pode falar.</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<header><a class="brand" href="/" aria-label="Ferris início"><span class="brand-mark">f.</span> ferris</a><span class="header-note">Seu assistente, por perto.</span><button id="open-settings" class="quiet">Conexão <span id="connection-dot" class="dot"></span></button></header>
+<main>
+ <section class="companion" aria-labelledby="title">
+  <div class="date" id="date"></div><h1 id="title">Pode falar.</h1><p class="intro">Uma ideia, uma pergunta,<br>ou só um bom dia.</p>
+  <div class="creature" id="creature" aria-hidden="true"><svg viewBox="0 0 360 260" fill="none"><g stroke="#283e47" stroke-width="9" stroke-linecap="round"><path d="M95 174 53 196 36 226M106 195 79 220 75 242M265 174 307 196 324 226M254 195 281 220 285 242"/><path d="M97 147 53 130 37 94M263 147 307 130 323 94"/></g><path d="M30 109C9 88 7 51 26 35L39 65 60 40C82 70 60 105 42 113Z" fill="#ef8b65"/><path d="M330 109C351 88 353 51 334 35L321 65 300 40C278 70 300 105 318 113Z" fill="#ef8b65"/><path d="M78 162C78 99 119 86 180 86S282 99 282 162C282 209 238 230 180 230S78 209 78 162Z" fill="#ef8b65"/><path d="M128 103 122 73M232 103 238 73" stroke="#ef8b65" stroke-width="18" stroke-linecap="round"/><g class="eyes" fill="#283e47"><ellipse cx="121" cy="65" rx="12" ry="17"/><ellipse cx="239" cy="65" rx="12" ry="17"/></g><path d="M158 168Q180 190 202 168" stroke="#283e47" stroke-width="7" stroke-linecap="round"/><ellipse cx="120" cy="163" rx="15" ry="8" fill="#f9b397"/><ellipse cx="240" cy="163" rx="15" ry="8" fill="#f9b397"/></svg></div>
+  <div class="listen-state"><span class="dot" id="mic-dot"></span><span id="state" role="status">Pronto quando você estiver.</span></div>
+  <button class="primary" id="listen">Ativar microfone</button>
+  <div class="voice-options"><label for="voice-mode">Reconhecimento</label><select id="voice-mode"><option value="esp">ESP32 + Whisper</option><option value="local">Testar detector neste PC + Whisper</option><option value="browser">Voz do navegador</option></select></div>
+  <p class="fine" id="voice-note">Diga “Ferris” antes de cada pergunta. A placa detecta o nome; a pergunta é transcrita pelo Whisper configurado.</p>
+  <div class="small-controls"><button class="quiet" id="wake">Chamar Ferris</button><button class="quiet" id="stop">Parar</button><label><input type="checkbox" id="spoken" checked> Ler respostas</label></div>
+  <div class="small-controls"><span class="fine" id="speech-voice">Voz brasileira no PC de destino</span><button class="quiet" id="test-voice">Testar voz</button></div>
+  <p class="fine" id="voice-cost">Voz expressiva Qwen. O tempo de geração depende do PC que executa a síntese.</p>
+  <div class="voice-options"><label for="voice-choice">Voz masculina</label><select id="voice-choice"><option value="ferris">Ferris · expressivo</option></select></div>
+ </section>
+ <section class="workspace">
+  <nav class="tabs" aria-label="Área de trabalho"><button class="tab selected" id="tab-chat" aria-selected="true">Conversa</button><button class="tab" id="tab-voice" aria-selected="false">Minha voz</button></nav>
+  <div id="chat-pane" class="pane">
+   <div class="conversation-heading"><h2>O que vamos descobrir?</h2><button class="quiet" id="clear">Nova conversa</button></div>
+   <div id="messages" class="messages" role="log" aria-live="polite"><div class="empty" id="empty"><span class="bubble-mark">“</span><p>Diga <strong>“Ferris”</strong> para começar.<br>Ou escreva aqui, do seu jeito.</p><div class="suggestions"><button data-prompt="Me dê uma ideia para um café da manhã gostoso.">Uma ideia para o café</button><button data-prompt="Pesquise novidades sobre exploração espacial.">Descobrir algo novo</button></div></div></div>
+   <form id="chat-form"><label class="sr-only" for="message">Sua mensagem</label><textarea id="message" placeholder="Pergunte alguma coisa…" maxlength="2000" rows="2" required></textarea><div class="compose-bottom"><label><input type="checkbox" id="search"> Pesquisar na web</label><button type="submit" id="send" class="dark">Enviar</button></div></form>
+   <p class="fine">A conversa usa o modelo conectado. Pesquisas exibem as fontes disponíveis.</p>
+  </div>
+  <div id="voice-pane" class="pane" hidden>
+   <h2>Vamos reconhecer sua voz.</h2><p>Grave “Ferris”, outras palavras e sons do ambiente. Esses exemplos vão treinar o detector de ativação.</p>
+   <div class="sample-counts"><div><strong id="count-ferris">0</strong><span>Ferris</span></div><div><strong id="count-other">0</strong><span>Outras palavras</span></div><div><strong id="count-noise">0</strong><span>Ambiente</span></div></div>
+   <label class="field">Microfone para os exemplos<select id="record-source"><option value="esp">ESP32 · microfone conectado à placa (USB)</option><option value="pc">Microfone deste PC</option></select></label>
+   <label class="field">Sessão de gravação<input id="group" value="esp-sala-01" pattern="[a-zA-Z0-9_-]{1,48}" maxlength="48"></label><p class="fine">Colete pelo menos 4 sessões, mudando de ambiente, distância ou momento. Grave Ferris e negativos em cada sessão. Isso separa treino e avaliação.</p>
+   <label class="field">O que você vai gravar?<select id="label"><option value="ferris">A palavra “Ferris”</option><option value="other">Outras palavras (inclua “férias” e “feliz”)</option><option value="noise">Ruído ou silêncio do ambiente</option></select></label>
+   <p id="record-input" class="fine">A gravação usa o microfone do ESP32. Conecte o USB e deixe o LED verde aceso.</p>
+   <label class="field">Nível de entrada<meter id="record-level" min="-60" max="0" value="-60" aria-label="Nível do microfone em decibéis"></meter><span id="record-level-text" class="fine">O nível aparece durante a gravação.</span></label>
+   <button id="record" class="primary">Gravar exemplo de 2 segundos</button><p id="record-state" role="status">Diga a palavra no centro da gravação.</p>
+   <label class="upload">Ou importar arquivos WAV<input id="upload" type="file" accept=".wav,audio/wav" multiple></label><p class="fine">WAV mono, 16 kHz, 16 bits; até 5 segundos. Os áudios ficam neste PC e não vão para o GitHub.</p>
+   <p id="model-state" class="model-state">Modelo pessoal ainda não treinado.</p>
+   <div class="training-panel">
+    <h3>Treinar o detector</h3>
+    <label class="field">Avaliação<select id="training-mode"><option value="sessions">Sessões diferentes — avaliação final</option><option value="recordings">Experimental — arquivos da mesma sessão</option></select></label>
+    <p class="fine" id="training-note">O treino experimental permite testar agora, mas não mede o desempenho em outro ambiente ou dia.</p>
+    <label><input id="flash-esp32" type="checkbox"> Gravar também no ESP32 conectado por USB</label>
+    <p id="flash-note" class="fine"></p>
+    <p id="device-state" class="fine"></p>
+    <button id="train-model" class="primary">Treinar e usar modelo</button>
+    <p id="training-state" role="status">O modelo anterior continua disponível durante o treino.</p>
+    <p id="training-metrics" class="fine"></p>
+    <p class="fine">O treino roda neste PC e exporta os pesos do detector para o ESP32. A placa precisa receber o firmware atualizado.</p>
+    <p id="whisper-state" class="fine"></p>
+   </div>
+  </div>
+ </section>
+</main>
+<footer><span>Uma pequena companhia. Uma conversa de cada vez.</span><span id="latency"></span></footer>
+<div id="notice" role="alert" hidden></div>
+<dialog id="settings"><form id="settings-form"><div class="dialog-heading"><h2>Conectar o Ferris</h2><button type="button" id="close-settings" class="quiet" aria-label="Fechar">✕</button></div><p>Conecte o modelo de conversa no LM Studio e o serviço de Whisper e voz. Eles podem rodar em outro PC da sua rede.</p>
+ <label class="field">Seu nome<input name="name" id="name" maxlength="60" value="Ian" required></label>
+ <label class="field">Endereço do LM Studio<input name="base_url" id="base-url" type="url" placeholder="http://192.168.15.17:1234/v1" required></label>
+ <label class="field">Chave do LM Studio (se exigida)<input id="api-key" type="password" autocomplete="off" placeholder="Deixe vazio para manter a chave salva"></label>
+ <div class="field"><label for="model">Modelo</label><div class="model-input"><input name="model" id="model" list="model-list" placeholder="Identificador do modelo"><datalist id="model-list"></datalist><button id="test-connection" type="button" class="quiet">Buscar modelos</button></div></div>
+ <label class="field">Serviço de Whisper e voz<input name="voice_url" id="voice-url" type="url" placeholder="http://192.168.15.17:8770/v1"></label>
+ <p class="fine">Use a porta do worker de voz (8770). Vazio usa os modelos instalados neste PC. Salvar aplica a mudança imediatamente.</p>
+ <label class="field">Token do serviço de voz<input id="voice-token" type="password" autocomplete="off" placeholder="Vazio mantém o token salvo"></label>
+ <button id="test-voice-connection" type="button" class="quiet">Verificar Whisper e voz</button>
+ <p id="voice-connection-result" role="status"></p>
+ <label class="field">Fuso horário<input name="timezone" id="timezone" value="America/Sao_Paulo" required></label>
+ <details><summary>Pesquisa Google e acesso pela rede</summary><label class="field">Chave SerpApi para pesquisa Google<input id="search-key" type="password" autocomplete="off" placeholder="Opcional; vazio mantém a chave salva"></label><label><input id="clear-keys" type="checkbox"> Remover as chaves salvas</label><label class="field">Token de acesso a este Ferris<input id="access-token" type="password" autocomplete="off"></label><p class="fine">O token do Ferris é usado somente nesta aba. Sem SerpApi, a pesquisa oferece um link para o Google.</p></details>
+ <p id="connection-result" role="status"></p><button type="submit" class="primary">Salvar conexão</button>
+</form></dialog>
+</body></html>
